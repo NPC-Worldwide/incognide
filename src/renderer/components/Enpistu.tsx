@@ -2288,13 +2288,13 @@ useEffect(() => {
     const api = window as any;
     if (!api.api?.onExecuteStudioAction) return;
 
-    const unsubscribe = api.api.onExecuteStudioAction(async (data: { action: string, args: any }) => {
+    const unsubscribe = api.api.onExecuteStudioAction(async (data: { id?: string, action: string, args: any }) => {
         console.log('[EXTERNAL] Executing studio action:', data.action, data.args);
 
         const ctx: StudioContext = {
             rootLayoutNode,
             contentDataRef,
-            activeContentPaneId,
+            activeContentPaneId: activeContentPaneId || '',
             setActiveContentPaneId,
             setRootLayoutNode,
             performSplit,
@@ -2302,10 +2302,30 @@ useEffect(() => {
             updateContentPane,
             generateId,
             findPanePath: (node: any, paneId: string, path: number[] = []) => findNodePath(node, paneId),
+            windowId,
+            currentPath: currentPathRef.current,
         };
 
-        const result = await executeStudioAction(data.action, data.args || {}, ctx);
-        console.log('[EXTERNAL] Action result:', result);
+        let result;
+        try {
+            result = await executeStudioAction(data.action, data.args || {}, ctx);
+            console.log('[EXTERNAL] Action result:', result);
+        } catch (err) {
+            console.error('[EXTERNAL] Action failed:', data.action, err);
+            result = { success: false, error: String(err) };
+        }
+
+        if (data.id) {
+            try {
+                await fetch('/api/studio/action_complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ actionId: data.id, result })
+                });
+            } catch (err) {
+                console.error('[EXTERNAL] Failed to report action completion:', err);
+            }
+        }
     });
 
     return () => {
@@ -2332,7 +2352,7 @@ useEffect(() => {
 
 
         if (actionData.window_id && actionData.window_id !== windowId) {
-            console.log('[MCP] Skipping action for different window:', actionId, actionData.window_id);
+            console.log('[MCP] Received action for different window (server should route these):', actionId, actionData.window_id);
             return;
         }
 
@@ -5271,7 +5291,9 @@ const handleBrowserDialogNavigate = (url) => {
         notifyPaneUpdate: (paneId: string) => {
             paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
         },
-    }), [rootLayoutNode, contentDataRef, activeContentPaneId, setActiveContentPaneId, performSplit, closeContentPane, updateContentPane, paneUpdateEmitter]);
+        windowId,
+        currentPath: currentPathRef.current,
+    }), [rootLayoutNode, contentDataRef, activeContentPaneId, setActiveContentPaneId, performSplit, closeContentPane, updateContentPane, paneUpdateEmitter, windowId]);
 
     usePaneAwareStreamListeners(
         config,
@@ -5489,6 +5511,31 @@ const handleBrowserDialogNavigate = (url) => {
     }, [windowId, currentPath, rootLayoutNode, activeContentPaneId, openMode, serializeWorkspace, saveWorkspaceToStorage]);
 
 
+
+    useEffect(() => {
+        if (!(window as any).api?.onRequestSavedWorkspaces) return;
+
+        const reportSavedWorkspaces = async () => {
+            try {
+                const allWorkspaces = JSON.parse(localStorage.getItem(WORKSPACES_STORAGE_KEY) || '{}');
+                const activeWindows = JSON.parse(localStorage.getItem(ACTIVE_WINDOWS_KEY) || '{}');
+                const paths = new Set<string>();
+                Object.values(activeWindows).forEach((info: any) => {
+                    if (info?.currentPath) paths.add(info.currentPath.replace(/\/+$/, ''));
+                });
+                Object.keys(allWorkspaces).forEach(p => paths.add(p.replace(/\/+$/, '')));
+                const pathList = Array.from(paths).filter(Boolean);
+                if (pathList.length > 0) {
+                    await (window as any).api.reportSavedWorkspaces(pathList);
+                }
+            } catch (error) {
+                console.error('[WORKSPACE_RESTORE] Failed to report saved workspaces:', error);
+            }
+        };
+
+        const unsubscribe = (window as any).api.onRequestSavedWorkspaces(reportSavedWorkspaces);
+        return unsubscribe;
+    }, []);
 
     useEffect(() => {
         const initApplicationData = async () => {

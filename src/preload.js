@@ -132,6 +132,13 @@ readPdfText: (filePath) =>
     moveWindowToDisplay: (windowId, displayId) => ipcRenderer.invoke('move-window-to-display', windowId, displayId),
     requestWindowWorkspace: (windowId) => ipcRenderer.invoke('request-window-workspace', windowId),
     restoreWindowWorkspace: (windowId, data) => ipcRenderer.invoke('restore-window-workspace', windowId, data),
+    routeStudioAction: (windowId, payload) => ipcRenderer.invoke('route-studio-action', windowId, payload),
+    reportSavedWorkspaces: (paths) => ipcRenderer.invoke('report-saved-workspaces', paths),
+    onRequestSavedWorkspaces: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('request-saved-workspaces', handler);
+        return () => ipcRenderer.removeListener('request-saved-workspaces', handler);
+    },
     onRestoreWorkspace: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('restore-workspace', handler);

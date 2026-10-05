@@ -157,6 +157,7 @@ loadShellEnv();
 
 const RECENT_PATHS_FILE = path.join(INCOGNIDE_HOME, 'recent_paths.json');
 const WINDOW_STATE_FILE = path.join(INCOGNIDE_HOME, 'window_state.json');
+const OPEN_WORKSPACES_FILE = path.join(INCOGNIDE_HOME, 'open_workspaces.json');
 
 function loadRecentPaths() {
   try {
@@ -208,6 +209,69 @@ function saveWindowState(state) {
   } catch (e) {
     console.error('[WINDOW_STATE] Error saving:', e.message);
   }
+}
+
+function loadOpenWorkspaces() {
+  try {
+    if (fs.existsSync(OPEN_WORKSPACES_FILE)) {
+      const data = JSON.parse(fs.readFileSync(OPEN_WORKSPACES_FILE, 'utf-8'));
+      if (Array.isArray(data?.paths)) {
+        return data.paths.filter(p => typeof p === 'string');
+      }
+    }
+  } catch (e) {
+    console.error('[OPEN_WORKSPACES] Error loading:', e.message);
+  }
+  return [];
+}
+
+function saveOpenWorkspaces(paths) {
+  try {
+    const unique = Array.from(new Set(paths.filter(p => typeof p === 'string')));
+    fs.writeFileSync(OPEN_WORKSPACES_FILE, JSON.stringify({ paths: unique, timestamp: Date.now() }, null, 2));
+  } catch (e) {
+    console.error('[OPEN_WORKSPACES] Error saving:', e.message);
+  }
+}
+
+function addOpenWorkspace(wsPath) {
+  if (!wsPath || typeof wsPath !== 'string') return;
+  const normalized = wsPath.replace(/\/+$/, '');
+  const paths = loadOpenWorkspaces();
+  if (!paths.includes(normalized)) {
+    paths.push(normalized);
+    saveOpenWorkspaces(paths);
+  }
+}
+
+function removeOpenWorkspace(wsPath) {
+  if (!wsPath || typeof wsPath !== 'string') return;
+  const normalized = wsPath.replace(/\/+$/, '');
+  const paths = loadOpenWorkspaces().filter(p => p.replace(/\/+$/, '') !== normalized);
+  saveOpenWorkspaces(paths);
+}
+
+async function restoreOpenWorkspaces(skipFolder) {
+  const skipNorm = skipFolder ? skipFolder.replace(/\/+$/, '') : null;
+  const savedPaths = loadOpenWorkspaces();
+  const alreadyOpen = new Set(Array.from(workspacePathByWindow.values()).map(p => p.replace(/\/+$/, '')));
+  let opened = 0;
+  for (const wsPath of savedPaths) {
+    const norm = wsPath.replace(/\/+$/, '');
+    if (skipNorm && norm === skipNorm) continue;
+    if (alreadyOpen.has(norm)) continue;
+    try {
+      const stat = await fsPromises.stat(wsPath);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      console.log(`[OPEN_WORKSPACES] Skipping missing path: ${wsPath}`);
+      continue;
+    }
+    createWindow({ folder: wsPath });
+    alreadyOpen.add(norm);
+    opened += 1;
+  }
+  console.log(`[OPEN_WORKSPACES] Restored ${opened} workspace windows`);
 }
 
 function clampWindowStateToDisplays(state) {
@@ -1408,7 +1472,12 @@ ipcMain.on('set-workspace-path', (event, workspacePath) => {
   if (workspacePath && typeof workspacePath === 'string') {
     const windowId = event.sender.id;
     const normalized = workspacePath.replace(/\/+$/, '');
+    const previous = workspacePathByWindow.get(windowId);
+    if (previous && previous !== normalized) {
+      removeOpenWorkspace(previous);
+    }
     workspacePathByWindow.set(windowId, normalized);
+    addOpenWorkspace(normalized);
     log(`[DOWNLOAD] Workspace path for window ${windowId}: ${normalized}`);
   }
 });
@@ -2103,15 +2172,49 @@ window.__addLog = function(msg) {
     if (!serverReady) {
       const triedBinary = _backendPath;
       const exitCode = backendProcess?.exitCode;
-      const errorMsg = `Bundled backend failed to start (binary: ${triedBinary}, exitCode: ${exitCode ?? 'null'}) — check backend.log for details`;
-      log(errorMsg);
-      _backendStartupError = {
-        message: errorMsg,
-        binaryPath: triedBinary,
-        exitCode,
-        timestamp: new Date().toISOString(),
-      };
-      await killBackendProcess();
+      log(`Bundled backend failed to start (binary: ${triedBinary}, exitCode: ${exitCode ?? 'null'}) — checking source fallback...`);
+
+      // If the bundled binary is broken (e.g. PyInstaller/pkg_resources mismatch),
+      // fall back to running the local source script directly.
+      const sourceScriptPath = path.join(app.getAppPath(), 'incognide_serve.py');
+      const sourcePython = getBackendPythonPath();
+      if (fs.existsSync(sourceScriptPath) && sourcePython && fs.existsSync(sourcePython) && spawnMode === 'bundled') {
+        log(`Falling back to source backend: ${sourcePython} -u ${sourceScriptPath}`);
+        await killBackendProcess();
+        _backendPath = sourcePython;
+        _spawnArgs = ['-u', sourceScriptPath];
+        _backendEnv = {
+          ...process.env,
+          INCOGNIDE_PORT: String(BACKEND_PORT),
+          INCOGNIDE_FRONTEND_PORT: String(FRONTEND_PORT),
+          INCOGNIDE_DB_PATH: dbPath,
+          INCOGNIDE_KG_REGISTRY: path.join(INCOGNIDE_HOME, 'kg_registry.yaml'),
+          FLASK_DEBUG: '1',
+          PYTHONUNBUFFERED: '1',
+          PYTHONIOENCODING: 'utf-8',
+          HOME: os.homedir(),
+          INCOGNIDE_BASE: path.join(os.homedir(), '.incognide'),
+          INCOGNIDE_HOME: INCOGNIDE_HOME,
+          INCOGNIDE_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
+        };
+        backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, 'source-fallback', _backendEnv);
+        serverReady = await waitForServer();
+      }
+
+      if (!serverReady) {
+        const finalExitCode = backendProcess?.exitCode;
+        const errorMsg = `Backend failed to start (tried: ${triedBinary}${spawnMode === 'bundled' ? `, fallback: ${_backendPath}` : ''}, exitCode: ${finalExitCode ?? 'null'}) — check backend.log for details`;
+        log(errorMsg);
+        _backendStartupError = {
+          message: errorMsg,
+          binaryPath: _backendPath,
+          exitCode: finalExitCode,
+          timestamp: new Date().toISOString(),
+        };
+        await killBackendProcess();
+      } else {
+        _backendStartupError = null;
+      }
     } else {
       _backendStartupError = null;
     }
@@ -2175,6 +2278,28 @@ window.__addLog = function(msg) {
   }
 
   createWindow(cliArgs);
+
+  // Restore any workspaces that were open in the previous session.
+  // Wait briefly so the first window has time to register its workspace path
+  // and avoid duplicate windows for the same folder.
+  setTimeout(() => {
+    restoreOpenWorkspaces(cliArgs.folder).catch(err => {
+      console.error('[OPEN_WORKSPACES] Restore failed:', err);
+    });
+  }, 2000);
+
+  // If this is a fresh install or the persisted file is empty, ask the first
+  // renderer to report workspaces it remembers from localStorage so we can
+  // reopen them.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.once('dom-ready', () => {
+      try {
+        mainWindow.webContents.send('request-saved-workspaces');
+      } catch (e) {
+        console.error('[OPEN_WORKSPACES] Failed to request saved workspaces:', e);
+      }
+    });
+  }
 });
 
 async function callBackendApi(url, options = {}) {
@@ -2814,6 +2939,11 @@ function createWindow(cliArgs = {}) {
     win.on('close', () => {
       clearTimeout(saveStateTimeout);
       doSaveWindowState();
+      const closingPath = win.webContents?.id ? workspacePathByWindow.get(win.webContents.id) : null;
+      if (closingPath) {
+        removeOpenWorkspace(closingPath);
+        workspacePathByWindow.delete(win.webContents.id);
+      }
     });
 
     mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -2949,7 +3079,10 @@ applyAppMenu();
         function _notifyStudioSubscribers(action) {
           const dead = [];
           for (const sub of _studioSSESubscribers) {
-            try { sub(action); } catch (e) { dead.push(sub); }
+            if (action.window_id && sub.windowId && action.window_id !== sub.windowId) {
+              continue;
+            }
+            try { sub.send(action); } catch (e) { dead.push(sub); }
           }
           for (const sub of dead) {
             const idx = _studioSSESubscribers.indexOf(sub);
@@ -3020,19 +3153,27 @@ applyAppMenu();
               'Connection': 'keep-alive',
               'X-Accel-Buffering': 'no'
             });
+            const qs = new URLSearchParams((req.url || '').split('?')[1] || '');
+            const subscriberWindowId = qs.get('windowId') || null;
             const send = (payload) => {
               try { res.write(`data: ${JSON.stringify(payload)}\n\n`); } catch {}
             };
-            _studioSSESubscribers.push(send);
+            const subscriber = { windowId: subscriberWindowId, send };
+            _studioSSESubscribers.push(subscriber);
             for (const [aid, action] of Object.entries(_pendingStudioActions)) {
-              if (action.status === 'pending') send({ id: aid, ...action });
+              if (action.status === 'pending') {
+                if (action.window_id && subscriberWindowId && action.window_id !== subscriberWindowId) {
+                  continue;
+                }
+                send({ id: aid, ...action });
+              }
             }
             const keepalive = setInterval(() => {
               try { res.write(': keepalive\n\n'); } catch {}
             }, 30000);
             req.on('close', () => {
               clearInterval(keepalive);
-              const idx = _studioSSESubscribers.indexOf(send);
+              const idx = _studioSSESubscribers.indexOf(subscriber);
               if (idx !== -1) _studioSSESubscribers.splice(idx, 1);
             });
             return;
@@ -3325,6 +3466,27 @@ ipcMain.handle('restore-window-workspace', async (_event, windowId, workspaceDat
   if (!target) return false;
   target.webContents.send('restore-workspace', workspaceData);
   return true;
+});
+
+ipcMain.handle('route-studio-action', async (_event, windowId, payload) => {
+  const allWindows = BrowserWindow.getAllWindows();
+  const target = allWindows.find(w => !w.isDestroyed() && (w.webContents?.id === windowId || w.id === windowId));
+  if (!target) {
+    console.error('[ROUTE_ACTION] Target window not found:', windowId);
+    return { success: false, error: `Window ${windowId} not found` };
+  }
+  target.webContents.send('execute-studio-action', payload);
+  return { success: true };
+});
+
+ipcMain.handle('report-saved-workspaces', async (_event, paths) => {
+  if (!Array.isArray(paths)) return { success: false, error: 'paths must be an array' };
+  const normalized = paths.filter(p => typeof p === 'string').map(p => p.replace(/\/+$/, ''));
+  for (const p of normalized) {
+    addOpenWorkspace(p);
+  }
+  await restoreOpenWorkspaces();
+  return { success: true, count: normalized.length };
 });
 
 ipcMain.handle('close-window-by-id', async (_event, windowId) => {
