@@ -37,10 +37,18 @@ function writeCtxSync(filePath, ctx) {
 
 function buildUpdatedProviders(providers, providerName, models, options = {}) {
   const next = Array.isArray(providers) ? [...providers] : [];
-  const existing = next.find((p) => p.name === providerName);
+  const normalizedName = String(providerName || '').toLowerCase().replace(/\s+/g, '');
+  const matchKey = options.providerType
+    ? String(options.providerType).toLowerCase().replace(/\s+/g, '')
+    : normalizedName;
+  const existing = next.find((p) => {
+    const pKey = String(p.name || '').toLowerCase().replace(/\s+/g, '');
+    const pType = String(p.provider_type || '').toLowerCase().replace(/\s+/g, '');
+    return pKey === matchKey || pType === matchKey;
+  });
 
   const newEntry = {
-    name: providerName,
+    name: existing ? providerName : (existing?.name || providerName),
     ...(options.apiUrl ? { api_url: options.apiUrl } : {}),
     ...(options.apiKey ? { api_key: options.apiKey } : {}),
     ...(options.apiKeyVar ? { api_key_var: options.apiKeyVar } : {}),

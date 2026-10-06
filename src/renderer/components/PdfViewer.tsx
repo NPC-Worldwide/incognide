@@ -5,7 +5,7 @@ import { Viewer, Worker, SpecialZoomLevel, ScrollMode, ViewMode } from '@react-p
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import { zoomPlugin } from '@react-pdf-viewer/zoom';
 import { searchPlugin } from '@react-pdf-viewer/search';
-import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+const pdfjsWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url).href;
 import {
     Highlighter, MessageSquare, Trash2,
     Eye, EyeOff, Edit2, Save, X, PanelRightClose, PanelRightOpen,

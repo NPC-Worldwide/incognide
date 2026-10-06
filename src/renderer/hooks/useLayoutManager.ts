@@ -39,6 +39,8 @@ export function getConversationStats(messages: any[]) {
             acc.inputTokens += (msg.input_tokens || 0);
             acc.outputTokens += (msg.output_tokens || 0);
             if (msg.cost) acc.totalCost += msg.cost;
+        } else {
+            acc.inputTokens += (msg.input_tokens || 0);
         }
         if (role !== 'user') {
             if (msg.model) acc.models.add(msg.model);

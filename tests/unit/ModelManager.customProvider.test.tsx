@@ -15,6 +15,8 @@ vi.mock('lucide-react', () => ({
   RefreshCw: () => <span data-testid="refresh-icon" />,
   Plus: () => <span data-testid="plus-icon" />,
   Globe: () => <span data-testid="globe-icon" />,
+  FileCode: () => <span data-testid="file-code-icon" />,
+  AlertCircle: () => <span data-testid="alert-circle-icon" />,
 }));
 
 // Mock npcts components that ModelManager imports but does not render directly.
