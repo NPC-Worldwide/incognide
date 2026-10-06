@@ -6,7 +6,6 @@ describe('buildUpdatedProviders', () => {
     const result = buildUpdatedProviders([], 'openai', ['gpt-4', 'gpt-3.5-turbo'], {});
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe('openai');
-    expect(result[0].provider_type).toBe('openai');
     expect(result[0].models).toEqual(['gpt-4', 'gpt-3.5-turbo']);
   });
 

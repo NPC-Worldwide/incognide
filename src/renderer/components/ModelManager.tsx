@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { DownloadCloud, Trash2, MessageSquare, Send, X, ChevronRight, RefreshCw, Plus, Globe } from "lucide-react";
+import { DownloadCloud, Trash2, MessageSquare, Send, X, ChevronRight, RefreshCw, Plus, Globe, FileCode } from "lucide-react";
 import { Card, Button, Input } from "npcts";
 import OrcaRouterConfig from './OrcaRouterConfig';
 
@@ -66,7 +66,7 @@ const ModelList = ({ models, activeProvider, isDeleting, onDelete, onStartChat }
     );
 };
 
-const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider: string) => void } = {}) => {
+const ModelManager = ({ onStartChat, onOpenModelsYaml }: { onStartChat?: (model: string, provider: string) => void; onOpenModelsYaml?: () => void } = {}) => {
     const [providerStatuses, setProviderStatuses] = useState<Record<string, string>>({
         gguf: 'ready', llamacpp: 'checking', lmstudio: 'checking',
         ollama: 'checking', ...(isMac ? { omlx: 'checking' } : {})
@@ -94,6 +94,7 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
 
     const [detectedProviders, setDetectedProviders] = useState<any[]>([]);
     const [customProviders, setCustomProviders] = useState<Record<string, any>>({});
+    const [userModelsConfig, setUserModelsConfig] = useState<{ providers: any[] }>({ providers: [] });
     const [apiModels, setApiModels] = useState<Record<string, any[]>>({});
     const [apiLoading, setApiLoading] = useState<Record<string, boolean>>({});
     const [apiErrors, setApiErrors] = useState<Record<string, string>>({});
@@ -159,6 +160,13 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
         setProviderStatuses(prev => ({ ...prev, gguf: 'ready' }));
     };
 
+    const loadUserModels = async () => {
+        try {
+            const result = await (window as any).api.userModelsLoad();
+            if (result?.config) setUserModelsConfig(result.config);
+        } catch {}
+    };
+
     const loadApiProviders = async () => {
         try {
             const detected = await (window as any).api?.detectProviderKeys?.();
@@ -172,11 +180,13 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
 
     const handleAddCustomProvider = async () => {
         if (!newProviderName.trim() || !newProviderUrl.trim()) return;
+        const name = newProviderName.toLowerCase();
+        const apiKeyVar = newProviderKeyVar || `${name.toUpperCase()}_API_KEY`;
         const updated = {
             ...customProviders,
-            [newProviderName.toLowerCase()]: {
+            [name]: {
                 base_url: newProviderUrl,
-                api_key_var: newProviderKeyVar || `${newProviderName.toUpperCase()}_API_KEY`,
+                api_key_var: apiKeyVar,
             },
         };
         await (window as any).api.customProvidersWrite(updated);
@@ -186,24 +196,59 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
         loadApiProviders();
     };
 
-    const toggleExpand = (key: string) => {
-        setExpanded(prev => {
-            const next = !prev[key];
-            if (next && !providerModels[key] && !apiModels[key] && !apiLoading[key]) {
-                const local = LOCAL_PROVIDERS[key];
-                if (local) {
-                    fetchModelsForProvider(key);
+    const KNOWN_PROVIDERS = useMemo(() => new Set([
+        'openai', 'anthropic', 'gemini', 'openrouter', 'deepseek', 'groq', 'moonshot',
+        'mistral', 'together', 'xai', 'perplexity', 'ollama', 'lmstudio', 'llamacpp',
+    ]), []);
+
+    const DEFAULT_MODELS: Record<string, string> = {
+        openai: 'gpt-4o',
+        anthropic: 'claude-sonnet-4',
+        gemini: 'gemini-2.5-flash',
+        openrouter: 'openai/gpt-4o',
+        deepseek: 'deepseek-chat',
+        groq: 'llama-3.3-70b-versatile',
+        moonshot: 'moonshot-v1-8k',
+        mistral: 'mistral-large-latest',
+        together: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+        xai: 'grok-3',
+        perplexity: 'sonar-pro',
+        ollama: 'qwen3.5:4b',
+    };
+
+    const handleAddDetectedToUserModels = async (p: any) => {
+        try {
+            const isKnown = KNOWN_PROVIDERS.has(p.key);
+            const options: any = isKnown ? {} : {
+                ...(p.baseUrl ? { apiUrl: p.baseUrl } : {}),
+                ...(p.apiKeyVar ? { apiKeyVar: p.apiKeyVar } : {}),
+            };
+            let models: string[] = [];
+            if (p.local) {
+                if (p.key === 'ollama') {
+                    const result = await window.api.getLocalOllamaModels();
+                    models = (result?.models || []).map((m: any) => m.name || m.id || m);
                 } else {
-                    const p = allProviders.find(a => a.key === key);
-                    if (p && p.baseUrl) fetchApiModels(key, p.baseUrl, p.apiKeyVar);
+                    const result = await (window as any).api.scanLocalModels?.(p.key);
+                    models = (result?.models || []).map((m: any) => m.name || m.id || m.filename || m);
                 }
+            } else if (isKnown) {
+                models = DEFAULT_MODELS[p.key] ? [DEFAULT_MODELS[p.key]] : [];
             }
-            return { ...prev, [key]: next };
-        });
+            await (window as any).api.userModelsUpdate({
+                providerName: p.key,
+                models,
+                options,
+            });
+            loadUserModels();
+        } catch (err: any) {
+            console.error('[ModelManager] add detected provider failed:', err.message);
+        }
     };
 
     useEffect(() => {
         checkAllStatuses();
+        loadUserModels();
         loadApiProviders();
         const cleanupProgress = window.api.onOllamaPullProgress((progress: any) => setPullProgress(progress));
         const cleanupComplete = window.api.onOllamaPullComplete(() => {
@@ -215,50 +260,107 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
         return () => { cleanupProgress(); cleanupComplete(); cleanupError(); };
     }, []);
 
-    const allProviders = useMemo(() => {
+    const { configuredProviders, suggestedProviders, detectedLocalProviders } = useMemo(() => {
         const seen = new Set<string>();
-        const list: Array<{ key: string; name: string; baseUrl: string; apiKeyVar: string; local: boolean; custom?: boolean; color: string; bgColor: string; description?: string; docsUrl?: string; defaultPort?: number | null }> = [];
+        const configured: Array<{ key: string; name: string; baseUrl: string; apiKeyVar: string; local: boolean; custom?: boolean; color: string; bgColor: string; description?: string; docsUrl?: string; defaultPort?: number | null; source: 'local' | 'models.yaml' | 'custom' }> = [];
 
-        for (const [key, info] of Object.entries(LOCAL_PROVIDERS)) {
-            if (seen.has(key)) continue;
+        for (const prov of userModelsConfig.providers || []) {
+            const key = (prov.name || '').toLowerCase();
+            if (!key || seen.has(key)) continue;
             seen.add(key);
-            list.push({ key, name: info.name, baseUrl: '', apiKeyVar: '', local: true, color: info.color, bgColor: info.bgColor, description: info.description, docsUrl: info.docsUrl, defaultPort: info.defaultPort });
+            const local = LOCAL_PROVIDERS[key];
+            const meta = API_PROVIDER_META[key];
+            configured.push({
+                key,
+                name: local?.name || meta?.name || key.charAt(0).toUpperCase() + key.slice(1),
+                baseUrl: prov.api_url || local?.docsUrl || meta?.docsUrl || '',
+                apiKeyVar: prov.api_key_var || `${key.toUpperCase()}_API_KEY`,
+                local: !!local,
+                color: local?.color || meta?.color || 'text-cyan-400',
+                bgColor: local?.bgColor || meta?.bgColor || 'bg-cyan-600',
+                description: local?.description,
+                docsUrl: local?.docsUrl || meta?.docsUrl,
+                defaultPort: local?.defaultPort,
+                source: 'models.yaml',
+            });
         }
 
+        for (const [name, config] of Object.entries(customProviders)) {
+            const key = name.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const local = LOCAL_PROVIDERS[key];
+            configured.push({
+                key,
+                name: local?.name || name.charAt(0).toUpperCase() + name.slice(1),
+                baseUrl: (config as any).base_url || local?.docsUrl || '',
+                apiKeyVar: (config as any).api_key_var || '',
+                local: !!local,
+                custom: true,
+                color: local?.color || 'text-cyan-400',
+                bgColor: local?.bgColor || 'bg-cyan-600',
+                description: local?.description,
+                docsUrl: local?.docsUrl,
+                defaultPort: local?.defaultPort,
+                source: 'custom',
+            });
+        }
+
+        const suggested: Array<{ key: string; name: string; baseUrl: string; apiKeyVar: string; color: string; bgColor: string; docsUrl?: string }> = [];
         for (const d of detectedProviders) {
-            if (seen.has(d.provider)) continue;
-            seen.add(d.provider);
-            const meta = API_PROVIDER_META[d.provider];
-            list.push({
-                key: d.provider,
-                name: meta?.name || d.provider.charAt(0).toUpperCase() + d.provider.slice(1),
+            const key = d.provider.toLowerCase();
+            if (seen.has(key) || LOCAL_PROVIDERS[key]) continue;
+            const meta = API_PROVIDER_META[key];
+            suggested.push({
+                key,
+                name: meta?.name || key.charAt(0).toUpperCase() + key.slice(1),
                 baseUrl: d.baseUrl,
                 apiKeyVar: d.envVar,
-                local: false,
-                custom: d.custom,
                 color: meta?.color || 'text-cyan-400',
                 bgColor: meta?.bgColor || 'bg-cyan-600',
                 docsUrl: meta?.docsUrl,
             });
         }
 
-        for (const [name, config] of Object.entries(customProviders)) {
-            if (seen.has(name)) continue;
-            seen.add(name);
-            list.push({
-                key: name,
-                name: name.charAt(0).toUpperCase() + name.slice(1),
-                baseUrl: (config as any).base_url || '',
-                apiKeyVar: (config as any).api_key_var || '',
-                local: false,
-                custom: true,
-                color: 'text-cyan-400',
-                bgColor: 'bg-cyan-600',
+        const detectedLocal: Array<{ key: string; name: string; status: string; color: string; bgColor: string; description?: string; docsUrl?: string; defaultPort?: number | null; local: boolean }> = [];
+        for (const [key, info] of Object.entries(LOCAL_PROVIDERS)) {
+            if (seen.has(key)) continue;
+            const status = providerStatuses[key];
+            if (!status || status === 'not_found') continue;
+            detectedLocal.push({
+                key,
+                name: info.name,
+                status,
+                color: info.color,
+                bgColor: info.bgColor,
+                description: info.description,
+                docsUrl: info.docsUrl,
+                defaultPort: info.defaultPort,
+                local: true,
             });
         }
-        list.sort((a, b) => a.name.localeCompare(b.name));
-        return list;
-    }, [detectedProviders, customProviders]);
+
+        configured.sort((a, b) => a.name.localeCompare(b.name));
+        suggested.sort((a, b) => a.name.localeCompare(b.name));
+        detectedLocal.sort((a, b) => a.name.localeCompare(b.name));
+        return { configuredProviders: configured, suggestedProviders: suggested, detectedLocalProviders: detectedLocal };
+    }, [detectedProviders, customProviders, userModelsConfig, providerStatuses]);
+
+    const toggleExpand = (key: string) => {
+        setExpanded(prev => {
+            const next = !prev[key];
+            if (next && !providerModels[key] && !apiModels[key] && !apiLoading[key]) {
+                const local = LOCAL_PROVIDERS[key];
+                if (local) {
+                    fetchModelsForProvider(key);
+                } else {
+                    const p = configuredProviders.find(a => a.key === key);
+                    if (p && p.baseUrl) fetchApiModels(key, p.baseUrl, p.apiKeyVar);
+                }
+            }
+            return { ...prev, [key]: next };
+        });
+    };
 
     const handlePullModel = async () => {
         if (!pullModelName.trim() || isPulling) return;
@@ -303,10 +405,16 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
         <div className="space-y-3 h-full overflow-y-auto">
             <div className="flex items-center justify-between">
                 <h4 className="text-xs font-semibold theme-text-secondary">All Providers</h4>
-                <button onClick={() => setShowAddProvider(!showAddProvider)}
-                    className="text-[10px] px-2 py-1 rounded bg-cyan-700 hover:bg-cyan-600 text-white flex items-center gap-1">
-                    <Plus size={10} /> Add Provider
-                </button>
+                <div className="flex items-center gap-2">
+                    <button onClick={() => setShowAddProvider(!showAddProvider)}
+                        className="text-[10px] px-2 py-1 rounded bg-cyan-700 hover:bg-cyan-600 text-white flex items-center gap-1">
+                        <Plus size={10} /> Add Provider
+                    </button>
+                    <button onClick={() => onOpenModelsYaml?.()}
+                        className="text-[10px] px-2 py-1 rounded bg-white/5 hover:bg-white/10 theme-text-secondary flex items-center gap-1">
+                        <FileCode size={10} /> Edit models.yaml
+                    </button>
+                </div>
             </div>
 
             {showAddProvider && (
@@ -336,7 +444,7 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
                 </div>
             )}
 
-            {allProviders.map(p => {
+            {configuredProviders.map(p => {
                 const isExpanded = expanded[p.key];
                 const isLocal = p.local;
                 const status = isLocal ? providerStatuses[p.key] : undefined;
@@ -353,7 +461,8 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
                             <ChevronRight size={14} className={`theme-text-muted transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`} />
                             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${p.bgColor}`} />
                             <span className={`text-sm font-medium flex-1 ${p.color}`}>{p.name}</span>
-                            {p.custom && <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400">custom</span>}
+                            {p.source === 'models.yaml' && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-300">models.yaml</span>}
+                            {p.source === 'custom' && <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400">custom</span>}
                             {p.apiKeyVar && <span className="text-[9px] theme-text-muted font-mono">{p.apiKeyVar}</span>}
                             {isLocal && <span className={`text-[9px] px-1.5 py-0.5 rounded ${status === 'running' || status === 'ready' ? 'bg-green-900/50 text-green-300' : status === 'not_running' ? 'bg-yellow-900/50 text-yellow-300' : status === 'checking' ? 'bg-yellow-900/50 text-yellow-300 animate-pulse' : 'bg-red-900/50 text-red-300'}`}>{statusLabel(status || '')}</span>}
                             {models.length > 0 && <span className="text-[10px] theme-text-muted">{models.length}</span>}
@@ -491,11 +600,55 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
                 );
             })}
 
-            {allProviders.length === 0 && (
+            {suggestedProviders.length > 0 && (
+                <div className="space-y-2 pt-2 border-t theme-border">
+                    <h4 className="text-xs font-semibold theme-text-secondary">Detected API keys</h4>
+                    {suggestedProviders.map(p => (
+                        <div key={p.key} className="flex items-center justify-between px-3 py-2 rounded bg-white/5 border theme-border">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${p.bgColor}`} />
+                                <span className={`text-sm font-medium ${p.color}`}>{p.name}</span>
+                                <span className="text-[9px] theme-text-muted font-mono truncate">{p.apiKeyVar}</span>
+                            </div>
+                            <button
+                                onClick={() => handleAddDetectedToUserModels(p)}
+                                className="text-[10px] px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1 transition-colors"
+                            >
+                                <Plus size={10} /> Add to models.yaml
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {detectedLocalProviders.length > 0 && (
+                <div className="space-y-2 pt-2 border-t theme-border">
+                    <h4 className="text-xs font-semibold theme-text-secondary">Detected local providers</h4>
+                    {detectedLocalProviders.map(p => (
+                        <div key={p.key} className="flex items-center justify-between px-3 py-2 rounded bg-white/5 border theme-border">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${p.bgColor}`} />
+                                <span className={`text-sm font-medium ${p.color}`}>{p.name}</span>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded ${p.status === 'running' || p.status === 'ready' ? 'bg-green-900/50 text-green-300' : p.status === 'not_running' ? 'bg-yellow-900/50 text-yellow-300' : 'bg-yellow-900/50 text-yellow-300 animate-pulse'}`}>
+                                    {statusLabel(p.status)}
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => handleAddDetectedToUserModels(p)}
+                                className="text-[10px] px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1 transition-colors"
+                            >
+                                <Plus size={10} /> Add to models.yaml
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {configuredProviders.length === 0 && suggestedProviders.length === 0 && detectedLocalProviders.length === 0 && (
                 <div className="text-center py-8 theme-text-muted text-sm">
                     <Globe size={24} className="mx-auto mb-2 opacity-50" />
-                    <p>No providers detected.</p>
-                    <p className="text-xs mt-1">Set API keys in your shell config or add a custom provider above.</p>
+                    <p>No providers configured.</p>
+                    <p className="text-xs mt-1">Add providers to models.yaml, set API keys, or start a local model server.</p>
                 </div>
             )}
         </div>

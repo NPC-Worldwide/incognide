@@ -1,9 +1,9 @@
-import { getFileName, loadAvailableNPCs, loadTeamCtxFromPath, findProviderForModelFromCtx } from './utils';
+import { getFileName } from './utils';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { BACKEND_URL } from '../config';
 import {
-    Send, Paperclip, Maximize2, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, Save, Trash2, Zap, X, RefreshCw,
+    Send, Paperclip, Maximize2, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, Save, Trash2, Zap, X, RefreshCw,
     FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight,
     Database, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag,
     ChevronDown
@@ -108,6 +108,8 @@ interface AgentInputProps {
     setNpcsError?: (error: string | null) => void;
     setTeamConfigs?: (configs: Record<string, any>) => void;
     setPendingAddedModels?: (models: string[]) => void;
+    userModelsConfig?: { providers: any[] };
+    reloadUserModelsConfig?: () => void;
     currentNPC: string;
     setCurrentNPC: (val: string) => void;
 
@@ -353,6 +355,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
         currentNPC, setCurrentNPC,
         availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs, setPendingAddedModels,
+        userModelsConfig, reloadUserModelsConfig,
         selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
         broadcastMode, setBroadcastMode,
         availableMcpServers, enabledMcpServers,
@@ -1790,45 +1793,17 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                             }}
                             loading={modelsLoading}
                             error={modelsError}
-                            teamPathForCtx={currentNpcTeamPath}
-                            onModelsChanged={async (addedModelValue) => {
-                                if (!currentPath) return;
-                                try {
-                                    const modelValues = (addedModelValue || '').split('\n').filter(Boolean);
-                                    const [npcsResult, freshCtx] = await Promise.all([
-                                        loadAvailableNPCs(
-                                            currentPath,
-                                            setNpcsLoading || (() => {}),
-                                            setNpcsError || (() => {}),
-                                            setAvailableNPCs || (() => {})
-                                        ),
-                                        currentNpcTeamPath ? loadTeamCtxFromPath(currentNpcTeamPath) : Promise.resolve(null),
-                                    ]);
-                                    if (npcsResult?.teamConfigs && setTeamConfigs) {
-                                        setTeamConfigs(npcsResult.teamConfigs);
-                                    }
-                                    if (freshCtx && currentNpcTeamKey && setTeamConfigs) {
-                                        setTeamConfigs(prev => ({ ...prev, [currentNpcTeamKey]: freshCtx }));
-                                    }
-                                    if (modelValues.length > 0) {
-                                        const first = modelValues[0];
-                                        const provider = freshCtx ? findProviderForModelFromCtx(freshCtx, first) : (currentProvider || null);
-                                        setCurrentModel?.(first);
-                                        if (provider) setCurrentProvider?.(provider);
-                                        setSelectedModels?.([first]);
-                                        setPendingAddedModels?.(modelValues);
-                                    }
-                                } catch {}
+                            userModelsProviders={userModelsConfig.providers}
+                            onModelsChanged={(addedModel) => {
+                                if (addedModel) setPendingAddedModels?.([addedModel]);
+                                reloadUserModelsConfig?.();
                             }}
+                            favoriteModels={favoriteModels}
+                            onToggleFavorite={toggleFavoriteModel}
+                            showAllModels={showAllModels}
+                            onToggleShowAll={() => setShowAllModels(!showAllModels)}
                             placement="top"
                             className="w-full h-7 justify-center text-xs px-2 max-w-none"
-                            toolbar={(
-                                <div className="flex items-center justify-end gap-2">
-                                    <button onClick={() => setSelectedModels(currentModel ? [currentModel] : [])} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
-                                    <button onClick={() => currentModel && toggleFavoriteModel(currentModel)} className={`${currentModel && favoriteModels.has(currentModel) ? 'text-yellow-400' : 'text-gray-500 hover:text-yellow-400'}`}><Star size={10} /></button>
-                                    <button onClick={() => setShowAllModels(!showAllModels)} className={`${!showAllModels && favoriteModels.size > 0 ? 'text-blue-400' : 'text-gray-500'}`}><ListFilter size={10} /></button>
-                                </div>
-                            )}
                         />
                     </div>
 

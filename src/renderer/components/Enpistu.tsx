@@ -34,6 +34,7 @@ import SettingsMenu from './SettingsMenu';
 import NPCTeamMenu from './NPCTeamMenu';
 
 import JinxMenu from './JinxMenu';
+import UserModelsEditor from './UserModelsEditor';
 import '../../index.css';
 import CtxEditor from './CtxEditor';
 import TeamManagement from './TeamManagement';
@@ -405,7 +406,12 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         toggleFavoriteModel, modelsToDisplay,
         teamConfigs, setTeamConfigs, modelWarning, setModelWarning,
         pendingAddedModels, setPendingAddedModels,
+        userModelsConfig, reloadUserModelsConfig,
     } = useModelSelection();
+    const useModelSelectionRef = useRef(reloadUserModelsConfig);
+    useEffect(() => {
+        useModelSelectionRef.current = reloadUserModelsConfig;
+    }, [reloadUserModelsConfig]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -2288,13 +2294,13 @@ useEffect(() => {
     const api = window as any;
     if (!api.api?.onExecuteStudioAction) return;
 
-    const unsubscribe = api.api.onExecuteStudioAction(async (data: { action: string, args: any }) => {
+    const unsubscribe = api.api.onExecuteStudioAction(async (data: { id?: string, action: string, args: any }) => {
         console.log('[EXTERNAL] Executing studio action:', data.action, data.args);
 
         const ctx: StudioContext = {
             rootLayoutNode,
             contentDataRef,
-            activeContentPaneId,
+            activeContentPaneId: activeContentPaneId || '',
             setActiveContentPaneId,
             setRootLayoutNode,
             performSplit,
@@ -2302,10 +2308,30 @@ useEffect(() => {
             updateContentPane,
             generateId,
             findPanePath: (node: any, paneId: string, path: number[] = []) => findNodePath(node, paneId),
+            windowId,
+            currentPath: currentPathRef.current,
         };
 
-        const result = await executeStudioAction(data.action, data.args || {}, ctx);
-        console.log('[EXTERNAL] Action result:', result);
+        let result;
+        try {
+            result = await executeStudioAction(data.action, data.args || {}, ctx);
+            console.log('[EXTERNAL] Action result:', result);
+        } catch (err) {
+            console.error('[EXTERNAL] Action failed:', data.action, err);
+            result = { success: false, error: String(err) };
+        }
+
+        if (data.id) {
+            try {
+                await fetch('/api/studio/action_complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ actionId: data.id, result })
+                });
+            } catch (err) {
+                console.error('[EXTERNAL] Failed to report action completion:', err);
+            }
+        }
     });
 
     return () => {
@@ -2332,7 +2358,7 @@ useEffect(() => {
 
 
         if (actionData.window_id && actionData.window_id !== windowId) {
-            console.log('[MCP] Skipping action for different window:', actionId, actionData.window_id);
+            console.log('[MCP] Received action for different window (server should route these):', actionId, actionData.window_id);
             return;
         }
 
@@ -3290,9 +3316,17 @@ const renderBrowserSettingsPane = useCallback(({ nodeId }: { nodeId: string }) =
 }, []);
 
 const renderModelManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
-    return <ModelManager onStartChat={(model: string, provider: string) => {
-        createNewConversationRef.current?.({ contentType: 'chat', model, provider });
-    }} />;
+    return <ModelManager
+        onStartChat={(model: string, provider: string) => {
+            createNewConversationRef.current?.({ contentType: 'chat', model, provider });
+        }}
+        onOpenModelsYaml={async () => {
+            const homeDir = await (window as any).api.getHomeDir?.();
+            if (homeDir) {
+                handleFileClickRef.current?.(`${homeDir}/.incognide/models.yaml`);
+            }
+        }}
+    />;
 }, []);
 
 const renderVoiceManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -4929,6 +4963,7 @@ const handleBrowserDialogNavigate = (url) => {
                 }}
                 embedded={true}
                 onOpenJinxTab={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
+                onOpenFile={(path) => handleFileClickRef.current?.(path)}
             />
         );
     }, [currentPath, createNewConversation, createTeamManagementPane]);
@@ -4938,6 +4973,29 @@ const handleBrowserDialogNavigate = (url) => {
         const newPaneId = generateId();
         contentDataRef.current[newPaneId] = { contentType: 'npcteam', contentId: 'npcteam' };
         addPaneOrTab(newPaneId);
+    }, []);
+
+
+    const createUserModelsEditorPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'usermodels', contentId: 'usermodels' };
+        addPaneOrTab(newPaneId);
+    }, []);
+
+
+    const renderUserModelsEditorPane = useCallback(({ nodeId }: { nodeId: string }) => {
+        return (
+            <UserModelsEditor
+                onSaved={() => {
+                    if (useModelSelectionRef.current?.reloadUserModelsConfig) {
+                        useModelSelectionRef.current.reloadUserModelsConfig();
+                    }
+                }}
+                onOpenRaw={(filePath: string) => {
+                    handleFileClickRef.current?.(filePath);
+                }}
+            />
+        );
     }, []);
 
 
@@ -4983,6 +5041,7 @@ const handleBrowserDialogNavigate = (url) => {
                 initialJinxName={paneData.initialJinxName}
                 onOpenJinxPane={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
                 onOpenDatabase={(path) => createDBToolPane(path)}
+                onOpenFile={(path) => handleFileClickRef.current?.(path)}
                 currentModel={currentModel}
                 currentProvider={currentProvider}
                 availableModels={availableModels}
@@ -5271,7 +5330,9 @@ const handleBrowserDialogNavigate = (url) => {
         notifyPaneUpdate: (paneId: string) => {
             paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
         },
-    }), [rootLayoutNode, contentDataRef, activeContentPaneId, setActiveContentPaneId, performSplit, closeContentPane, updateContentPane, paneUpdateEmitter]);
+        windowId,
+        currentPath: currentPathRef.current,
+    }), [rootLayoutNode, contentDataRef, activeContentPaneId, setActiveContentPaneId, performSplit, closeContentPane, updateContentPane, paneUpdateEmitter, windowId]);
 
     usePaneAwareStreamListeners(
         config,
@@ -5489,6 +5550,31 @@ const handleBrowserDialogNavigate = (url) => {
     }, [windowId, currentPath, rootLayoutNode, activeContentPaneId, openMode, serializeWorkspace, saveWorkspaceToStorage]);
 
 
+
+    useEffect(() => {
+        if (!(window as any).api?.onRequestSavedWorkspaces) return;
+
+        const reportSavedWorkspaces = async () => {
+            try {
+                const allWorkspaces = JSON.parse(localStorage.getItem(WORKSPACES_STORAGE_KEY) || '{}');
+                const activeWindows = JSON.parse(localStorage.getItem(ACTIVE_WINDOWS_KEY) || '{}');
+                const paths = new Set<string>();
+                Object.values(activeWindows).forEach((info: any) => {
+                    if (info?.currentPath) paths.add(info.currentPath.replace(/\/+$/, ''));
+                });
+                Object.keys(allWorkspaces).forEach(p => paths.add(p.replace(/\/+$/, '')));
+                const pathList = Array.from(paths).filter(Boolean);
+                if (pathList.length > 0) {
+                    await (window as any).api.reportSavedWorkspaces(pathList);
+                }
+            } catch (error) {
+                console.error('[WORKSPACE_RESTORE] Failed to report saved workspaces:', error);
+            }
+        };
+
+        const unsubscribe = (window as any).api.onRequestSavedWorkspaces(reportSavedWorkspaces);
+        return unsubscribe;
+    }, []);
 
     useEffect(() => {
         const initApplicationData = async () => {
@@ -5834,7 +5920,7 @@ const handleBrowserDialogNavigate = (url) => {
         
     return     (
         <>
-            <NPCTeamMenu isOpen={npcTeamMenuOpen} onClose={handleCloseNpcTeamMenu} currentPath={currentPath} startNewConversation={startNewConversationWithNpc} onOpenJinxTab={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}/>
+            <NPCTeamMenu isOpen={npcTeamMenuOpen} onClose={handleCloseNpcTeamMenu} currentPath={currentPath} startNewConversation={startNewConversationWithNpc} onOpenJinxTab={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })} onOpenFile={(path) => handleFileClickRef.current?.(path)}/>
             <JinxMenu isOpen={jinxMenuOpen} onClose={() => setJinxMenuOpen(false)} currentPath={currentPath}/>
 
 <SettingsMenu
@@ -6236,6 +6322,8 @@ const handleBrowserDialogNavigate = (url) => {
                 isOpen={ctxEditorOpen}
                 onClose={() => setCtxEditorOpen(false)}
                 teamPath={currentPath}
+                userModelsProviders={userModelsConfig.providers}
+                reloadUserModelsConfig={reloadUserModelsConfig}
             />
 
             <TeamManagement
@@ -6249,6 +6337,7 @@ const handleBrowserDialogNavigate = (url) => {
                 npcList={availableNPCs.map(npc => ({ name: npc.name, display_name: npc.display_name }))}
                 jinxList={availableJinxes.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
                 onOpenJinxPane={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
+                onOpenFile={(path) => handleFileClickRef.current?.(path)}
                 currentModel={currentModel}
                 currentProvider={currentProvider}
                 availableModels={availableModels}
@@ -6557,6 +6646,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     modelWarning,
     availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs,
     setPendingAddedModels,
+    userModelsConfig, reloadUserModelsConfig,
     currentNPC, setCurrentNPC: (v: any) => { setCurrentNPC(v); notifyUpdate(); },
 
     selectedModels,
@@ -6598,7 +6688,8 @@ const getChatInputProps = useCallback((paneId: string) => {
     availableModels, modelsLoading, modelsError, currentModel, currentProvider,
     favoriteModels, showAllModels, modelsToDisplay, ollamaToolModels,
     modelWarning,
-    availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs, setPendingAddedModels, currentNPC,
+    availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs, setPendingAddedModels,
+    userModelsConfig, reloadUserModelsConfig, currentNPC,
     selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
     broadcastMode, setBroadcastMode,
     availableMcpServers, enabledMcpServers, selectedMcpTools, availableMcpTools,
@@ -6632,6 +6723,7 @@ const paneRenderers = useMemo(() => ({
     npcteam: renderNPCTeamPane,
     jinx: renderJinxPane,
     teammanagement: renderTeamManagementPane,
+    usermodels: renderUserModelsEditorPane,
     settings: renderSettingsPane,
     'skills-manager': renderSkillsManagerPane,
     help: renderHelpPane,
@@ -7332,6 +7424,7 @@ const PANE_TITLES: Record<string, string> = {
     'npcteam': 'NPCs',
     'jinx': 'Jinxes',
     'teammanagement': 'Team',
+    'usermodels': 'Models',
     'diff': 'Diff',
     'browsergraph': 'Web Graph',
 };
@@ -8219,6 +8312,7 @@ const renderMainContent = () => {
         createNPCTeamPane={createNPCTeamPane}
         createJinxPane={createJinxPane}
         createTeamManagementPane={createTeamManagementPane}
+        createUserModelsEditorPane={createUserModelsEditorPane}
         createBrowserSettingsPane={createBrowserSettingsPane}
         createSkillsManagerPane={createSkillsManagerPane}
         createSettingsPane={createSettingsPane}

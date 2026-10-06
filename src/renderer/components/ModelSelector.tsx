@@ -1,9 +1,7 @@
-import React, { useMemo } from 'react';
-import { Plus, X, Trash2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { ModelSelector as NpctsModelSelector, type AddProviderPayload, type ModelInfo } from 'npcts';
 import yaml from 'js-yaml';
-import { API_PROVIDER_META } from './ModelManager';
-import { ModelSelector as NpctsModelSelector } from 'npcts';
-import type { ModelInfo } from 'npcts/core';
+import { Plus, X } from 'lucide-react';
 
 export interface ModelItem {
     value: string;
@@ -11,547 +9,264 @@ export interface ModelItem {
     provider?: string;
     base_url?: string;
     api_key_var?: string;
+    context_window?: number | null;
     [key: string]: any;
 }
 
-const providerKey = (prov?: any) => prov?.provider || prov?.provider_type || prov?.name || '';
+const providerKey = (prov?: any) =>
+    (prov?.name || prov?.provider || '').toLowerCase().replace(/\s+/g, '');
 
-const providerLabel = (prov?: any) => {
-    const key = providerKey(prov);
-    const meta = key ? API_PROVIDER_META[key as keyof typeof API_PROVIDER_META] : undefined;
-    return (meta as any)?.name || prov?.displayName || prov?.name || key || 'Provider';
+const toNpctsModel = (m: ModelItem) => ({
+    id: m.value,
+    displayName: m.display_name || m.value,
+    provider: m.provider || 'unknown',
+    contextWindow: m.context_window ?? undefined,
+});
+
+const KNOWN_PROVIDERS = new Set([
+    'openai', 'anthropic', 'gemini', 'openrouter', 'deepseek', 'groq', 'moonshot',
+    'mistral', 'together', 'xai', 'perplexity', 'ollama', 'lmstudio', 'llamacpp',
+]);
+
+const DEFAULT_MODELS: Record<string, string> = {
+    openai: 'gpt-4o',
+    anthropic: 'claude-sonnet-4',
+    gemini: 'gemini-2.5-flash',
+    openrouter: 'openai/gpt-4o',
+    deepseek: 'deepseek-chat',
+    groq: 'llama-3.3-70b-versatile',
+    moonshot: 'moonshot-v1-8k',
+    mistral: 'mistral-large-latest',
+    together: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    xai: 'grok-3',
+    perplexity: 'sonar-pro',
+    ollama: 'qwen3.5:4b',
 };
 
-const preprocessJinja = (content: string) =>
-    content.replace(/(?<!["'])\{\{[^{}]*\}\}(?!["'])/g, (match) => `"${match}"`);
+const saveProviderToUserModels = async (payload: AddProviderPayload) => {
+    const pKey = payload.provider.toLowerCase().replace(/\s+/g, '');
+    const isKnown = KNOWN_PROVIDERS.has(pKey);
+    const res = await (window as any).api.userModelsUpdate({
+        providerName: pKey,
+        models: [payload.model],
+        options: isKnown ? {} : {
+            ...(payload.apiUrl ? { apiUrl: payload.apiUrl } : {}),
+            ...(payload.apiKey ? { apiKey: payload.apiKey } : {}),
+        },
+    });
+    if (res?.error) throw new Error(res.error);
+};
 
-const findCtxFile = async (dirPath: string) => {
+const PROVIDER_DEFAULTS: Record<string, {
+    name: string;
+    color: string;
+    apiUrl?: string;
+    apiKeyVar?: string;
+    defaultModel?: string;
+    local?: boolean;
+}> = {
+    openai: { name: 'OpenAI', color: 'text-green-400' },
+    anthropic: { name: 'Anthropic', color: 'text-orange-400' },
+    gemini: { name: 'Gemini', color: 'text-blue-400' },
+    openrouter: { name: 'OpenRouter', color: 'text-purple-400' },
+    deepseek: { name: 'DeepSeek', color: 'text-cyan-400' },
+    groq: { name: 'Groq', color: 'text-indigo-400' },
+    moonshot: { name: 'Moonshot', color: 'text-pink-400' },
+    ollama: { name: 'Ollama', color: 'text-amber-400', local: true },
+    lmstudio: { name: 'LM Studio', color: 'text-yellow-400', local: true },
+    llamacpp: { name: 'llama.cpp', color: 'text-red-400', local: true },
+};
+
+const API_SHORTCUTS = ['openai', 'anthropic', 'gemini', 'openrouter', 'deepseek', 'moonshot', 'perplexity'];
+const LOCAL_SHORTCUTS = ['ollama', 'lmstudio', 'llamacpp'];
+
+const providerMeta: Record<string, { name: string; color: string }> = Object.fromEntries(
+    Object.entries(PROVIDER_DEFAULTS).map(([k, v]) => [k, { name: v.name, color: v.color }])
+);
+
+const detectProviderConfig = async (key: string): Promise<{ baseUrl?: string; apiKeyVar?: string } | null> => {
     try {
-        const items = await (window as any).api.readDirectory(dirPath);
-        const ctxFiles = (items || []).filter((item: any) => item.name && item.name.endsWith('.ctx'));
-        if (ctxFiles.length > 0) return ctxFiles[0].name;
+        const detected = await (window as any).api.detectProviderKeys?.();
+        if (Array.isArray(detected)) {
+            const d = detected.find((x: any) => (x.provider || '').toLowerCase().replace(/\s+/g, '') === key);
+            if (d) return { baseUrl: d.baseUrl, apiKeyVar: d.envVar };
+        }
     } catch {}
     return null;
 };
 
-export const removeProviderFromTeamCtx = async (teamPath: string, providerName: string) => {
-    if (!teamPath) throw new Error('No team path available.');
-    const ctxFile = await findCtxFile(teamPath);
-    const targetFile = ctxFile || 'team.ctx';
-    const filePath = `${teamPath}/${targetFile}`;
-
-    let rawCtx: string | null = null;
+const scanProviderModels = async (key: string, baseUrl?: string, apiKeyVar?: string): Promise<string[]> => {
     try {
-        const result = await (window as any).api.readFileContent(filePath);
-        rawCtx = typeof result === 'string' ? result : result?.content;
+        if (key === 'ollama') {
+            const result = await window.api.getLocalOllamaModels();
+            return (result?.models || []).map((m: any) => m.name || m.id || m);
+        }
+        if (key === 'lmstudio' || key === 'llamacpp') {
+            const result = await (window as any).api.scanLocalModels?.(key);
+            return (result?.models || []).map((m: any) => m.name || m.id || m.filename || m);
+        }
+        if (baseUrl && apiKeyVar) {
+            const result = await (window as any).api.getProviderModels({ provider: key, baseUrl, apiKeyVar });
+            return (result?.models || []).map((m: any) => m.name || m.id || m);
+        }
     } catch {}
-
-    let ctx: any = {};
-    if (rawCtx) {
-        try {
-            ctx = yaml.load(preprocessJinja(rawCtx)) || {};
-        } catch {
-            ctx = {};
-        }
-    }
-
-    const providers: any[] = Array.isArray(ctx.providers) ? [...ctx.providers] : [];
-    const filtered = providers.filter((p: any) => p.name !== providerName && p.provider_type !== providerName);
-    if (filtered.length === providers.length) {
-        throw new Error(`Provider "${providerName}" not found in team .ctx.`);
-    }
-
-    const cleanCtx = { ...ctx, providers: filtered };
-    delete cleanCtx.external_jinx_teams;
-    delete cleanCtx.EXTERNAL_JINX_TEAMS;
-
-    const result = await (window as any).api.writeFileContent(filePath, yaml.dump(cleanCtx, { lineWidth: -1 }));
-    if (result?.error) throw new Error(result.error);
-    return { filePath, targetFile };
+    return [];
 };
 
-export const saveProviderToTeamCtx = async (
-    teamPath: string,
-    providerName: string,
-    models: string[] | null,
-    options?: { apiUrl?: string; apiKey?: string; providerType?: string }
-) => {
-    if (!teamPath) throw new Error('No team path available.');
-    return await (window as any).api.teamUpdateProvider({
-        teamPath,
-        providerName,
-        models,
-        options,
-    });
-};
-
-const AddProviderPanel = ({
-    teamPath,
-    teamCtxProviders: teamCtxProvidersProp,
-    onAdded,
-}: {
-    teamPath: string;
-    teamCtxProviders?: any[];
-    onAdded: (modelValue?: string) => void;
-}) => {
-    const [providerName, setProviderName] = React.useState('');
-    const [providerType, setProviderType] = React.useState('');
-    const [modelName, setModelName] = React.useState('');
-    const [apiUrl, setApiUrl] = React.useState('');
-    const [apiKey, setApiKey] = React.useState('');
-    const [saving, setSaving] = React.useState(false);
-    const [error, setError] = React.useState<string | null>(null);
-    const [providerModelSelector, setProviderModelSelector] = React.useState<{
-        provider: any;
-        models: string[];
-        selected: Set<string>;
-        loading: boolean;
-        error: string | null;
-    } | null>(null);
-    const [detectedProviders, setDetectedProviders] = React.useState<any[]>([]);
-    const [detectedProvidersLoading, setDetectedProvidersLoading] = React.useState(false);
-    const [teamCtxProviders, setTeamCtxProviders] = React.useState<any[]>(teamCtxProvidersProp || []);
-    const addModelNameRef = React.useRef<HTMLInputElement>(null);
-
-    React.useEffect(() => {
-        setTimeout(() => addModelNameRef.current?.focus(), 50);
-    }, []);
-
-    React.useEffect(() => {
-        if (teamCtxProvidersProp) {
-            setTeamCtxProviders(teamCtxProvidersProp);
-            return;
-        }
-        if (!teamPath) return;
-        let cancelled = false;
-        (async () => {
-            try {
-                const ctxFile = await findCtxFile(teamPath);
-                if (!ctxFile) return;
-                const result = await (window as any).api.readFileContent(`${teamPath}/${ctxFile}`);
-                const raw = typeof result === 'string' ? result : result?.content;
-                if (!raw) return;
-                const ctx = yaml.load(preprocessJinja(raw)) || {};
-                if (!cancelled) setTeamCtxProviders(Array.isArray(ctx.providers) ? ctx.providers : []);
-            } catch {}
-        })();
-        return () => { cancelled = true; };
-    }, [teamPath, teamCtxProvidersProp]);
-
-    React.useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            setDetectedProvidersLoading(true);
-            try {
-                const d = await (window as any).api?.detectProviderKeys?.();
-                if (!cancelled) setDetectedProviders(Array.isArray(d) ? d : []);
-            } catch {
-                if (!cancelled) setDetectedProviders([]);
-            }
-            if (!cancelled) setDetectedProvidersLoading(false);
-        })();
-        return () => { cancelled = true; };
-    }, []);
-
-    const ctxProviderNames = React.useMemo(() => {
-        return new Set(teamCtxProviders.map((p: any) => providerKey(p)).filter(Boolean));
-    }, [teamCtxProviders]);
-
-    const extraDetectedProviders = React.useMemo(() => {
-        return detectedProviders.filter((d: any) => {
-            const name = d.provider || d.name;
-            return name && !ctxProviderNames.has(name);
-        });
-    }, [detectedProviders, ctxProviderNames]);
-
-    const knownCloudProviders = React.useMemo(() => {
-        const ctxKeys = new Set(teamCtxProviders.map((p: any) => providerKey(p)).filter(Boolean));
-        const detectedKeys = new Set(detectedProviders.map((d: any) => d.provider || d.name).filter(Boolean));
-        return Object.entries(API_PROVIDER_META)
-            .filter(([key]) => !ctxKeys.has(key) && !detectedKeys.has(key))
-            .map(([key, meta]) => ({ key, name: meta.name, defaultModel: meta.defaultModel }));
-    }, [teamCtxProviders, detectedProviders]);
-
-    const openProviderModelSelector = async (prov: any) => {
-        const pName = providerKey(prov);
-        const providerTypeVal = pName;
-        const existingModels = Array.isArray(prov.models) ? prov.models : [];
-        setProviderModelSelector({ provider: prov, models: [], selected: new Set(), loading: true, error: null });
-        try {
-            let fetchedModels: string[] = [];
-            if (providerTypeVal === 'ollama') {
-                const res = await (window as any).api.getLocalOllamaModels();
-                fetchedModels = (res?.models || []).map((m: any) => m.name || m.model || m.id).filter(Boolean);
-            } else if (['lmstudio', 'llamacpp', 'gguf'].includes(providerTypeVal)) {
-                const res = await (window as any).api.scanLocalModels?.(providerTypeVal);
-                fetchedModels = (res?.models || []).map((m: any) => m.name || m.path || m.id).filter(Boolean);
-            } else {
-                const result = await (window as any).api.getProviderModels({ provider: providerTypeVal });
-                fetchedModels = (result?.models || []).map((m: any) => m.id || m.name || m.value).filter(Boolean);
-            }
-            const fallbackModels = fetchedModels.length > 0 ? fetchedModels : existingModels;
-            const meta = API_PROVIDER_META[providerTypeVal as keyof typeof API_PROVIDER_META];
-            const models = fallbackModels.length > 0 ? fallbackModels : (meta?.defaultModel ? [meta.defaultModel] : []);
-            setProviderModelSelector({
-                provider: prov,
-                models,
-                selected: new Set(models),
-                loading: false,
-                error: models.length === 0 ? 'No models found for this provider.' : null,
-            });
-        } catch (err: any) {
-            const meta = API_PROVIDER_META[providerTypeVal as keyof typeof API_PROVIDER_META];
-            const fallback = meta?.defaultModel ? [meta.defaultModel] : existingModels;
-            setProviderModelSelector({
-                provider: prov,
-                models: fallback,
-                selected: new Set(fallback),
-                loading: false,
-                error: fallback.length === 0 ? (err.message || 'Failed to load models.') : null,
-            });
-        }
-    };
-
-    const handleSaveSelectedProviderModels = async () => {
-        if (!providerModelSelector || providerModelSelector.selected.size === 0) return;
-        const prov = providerModelSelector.provider;
-        const pName = providerKey(prov);
-        const providerTypeVal = pName;
-        setSaving(true);
-        setError(null);
-        try {
-            const selectedModels = Array.from(providerModelSelector.selected);
-            const allSelected = selectedModels.length === providerModelSelector.models.length && providerModelSelector.models.length > 0;
-            await saveProviderToTeamCtx(teamPath, pName, allSelected ? null : selectedModels, {
-                providerType: providerTypeVal,
-            });
-            onAdded(selectedModels.join('\n'));
-        } catch (err: any) {
-            setError(err.message || 'Failed to save models.');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const handleSaveNewModel = async () => {
-        const mName = modelName.trim();
-        const pName = providerName.trim();
-        if (!mName || !pName) {
-            setError('Model name and provider are required.');
-            return;
-        }
-        setSaving(true);
-        setError(null);
-        const detectedMatch = detectedProviders.find(
-            (d: any) =>
-                d.provider?.toLowerCase() === pName.toLowerCase() ||
-                d.displayName?.toLowerCase() === pName.toLowerCase() ||
-                d.name?.toLowerCase() === pName.toLowerCase()
-        );
-        const saveName = (detectedMatch?.provider || pName).replace(/\s+/g, '').toLowerCase();
-        const resolvedType = (detectedMatch?.provider || providerType.trim() || pName).replace(/\s+/g, '').toLowerCase();
-        try {
-            await saveProviderToTeamCtx(teamPath, saveName, [mName], {
-                apiUrl: apiUrl.trim() || undefined,
-                apiKey: apiKey.trim() || undefined,
-                providerType: resolvedType,
-            });
-            setModelName('');
-            setProviderName('');
-            setProviderType('');
-            setApiUrl('');
-            setApiKey('');
-            onAdded(mName);
-        } catch (err: any) {
-            setError(err.message || 'Failed to save model.');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    return (
-        <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-                <span className="text-[10px] font-medium text-blue-300">Add model to team .ctx</span>
-                <button onClick={() => onAdded()} className="text-gray-500 hover:text-gray-300"><X size={12} /></button>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-                <input
-                    ref={addModelNameRef}
-                    type="text"
-                    value={modelName}
-                    onChange={(e) => setModelName(e.target.value)}
-                    placeholder="Model name"
-                    className="theme-input text-xs px-2 py-1 rounded"
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
-                />
-                <input
-                    type="text"
-                    value={providerName}
-                    onChange={(e) => setProviderName(e.target.value)}
-                    placeholder="Provider name"
-                    className="theme-input text-xs px-2 py-1 rounded"
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
-                />
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-                <input
-                    type="text"
-                    value={providerType}
-                    onChange={(e) => setProviderType(e.target.value)}
-                    placeholder="Provider type (optional)"
-                    className="theme-input text-xs px-2 py-1 rounded"
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
-                />
-                <input
-                    type="text"
-                    value={apiUrl}
-                    onChange={(e) => setApiUrl(e.target.value)}
-                    placeholder="API URL (optional)"
-                    className="theme-input text-xs px-2 py-1 rounded"
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
-                />
-            </div>
-            <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="API Key (optional)"
-                className="w-full theme-input text-xs px-2 py-1 rounded"
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
-            />
-            {providerModelSelector ? (
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-medium text-blue-300">
-                            {providerModelSelector.loading ? 'Loading models...' : `Select models for ${providerLabel(providerModelSelector.provider)}`}
-                        </span>
-                        <button onClick={() => setProviderModelSelector(null)} className="text-gray-500 hover:text-gray-300"><X size={12} /></button>
-                    </div>
-                    {providerModelSelector.loading ? (
-                        <div className="text-[10px] text-gray-400">Loading... (uses .ctx models as fallback)</div>
-                    ) : (
-                        <>
-                            <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                                <button
-                                    onClick={() => setProviderModelSelector(prev => prev ? { ...prev, selected: new Set(prev.models) } : null)}
-                                    className="text-blue-400 hover:text-blue-300"
-                                >All</button>
-                                <button
-                                    onClick={() => setProviderModelSelector(prev => prev ? { ...prev, selected: new Set() } : null)}
-                                    className="text-blue-400 hover:text-blue-300"
-                                >None</button>
-                            </div>
-                            <div className="max-h-40 overflow-y-auto space-y-1 p-1 border theme-border rounded">
-                                {providerModelSelector.models.map((m: string) => {
-                                    const checked = providerModelSelector.selected.has(m);
-                                    return (
-                                        <label key={m} className={`flex items-center gap-2 px-2 py-1 text-[10px] rounded cursor-pointer ${checked ? 'bg-blue-500/20 text-blue-200' : 'hover:bg-white/5'}`}>
-                                            <input
-                                                type="checkbox"
-                                                checked={checked}
-                                                onChange={() => setProviderModelSelector(prev => {
-                                                    if (!prev) return null;
-                                                    const next = new Set(prev.selected);
-                                                    if (next.has(m)) next.delete(m); else next.add(m);
-                                                    return { ...prev, selected: next };
-                                                })}
-                                                className="w-3.5 h-3.5 accent-blue-500"
-                                            />
-                                            <span className="truncate">{m}</span>
-                                        </label>
-                                    );
-                                })}
-                            </div>
-                            {providerModelSelector.error && <div className="text-[10px] text-red-400">{providerModelSelector.error}</div>}
-                            <button
-                                onClick={handleSaveSelectedProviderModels}
-                                disabled={saving || providerModelSelector.selected.size === 0}
-                                className="w-full text-[10px] px-2 py-1 rounded bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white transition-colors"
-                            >
-                                {saving ? 'Saving...' : `Add ${providerModelSelector.selected.size} model(s) to team .ctx`}
-                            </button>
-                        </>
-                    )}
-                </div>
-            ) : (
-                <div className="space-y-1">
-                    {teamCtxProviders.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                            {teamCtxProviders.map((prov: any, idx: number) => {
-                                const pKey = providerKey(prov);
-                                const pLabel = providerLabel(prov);
-                                return (
-                                    <div key={`ctx-${pKey || idx}-${idx}`} className="flex items-center gap-1">
-                                        <button
-                                            onClick={() => openProviderModelSelector(prov)}
-                                            disabled={saving}
-                                            className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-blue-300 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
-                                        >
-                                            + {pLabel}
-                                        </button>
-                                        <button
-                                            onClick={async () => {
-                                                if (!teamPath || !pKey) return;
-                                                setSaving(true);
-                                                setError(null);
-                                                try {
-                                                    await removeProviderFromTeamCtx(teamPath, pKey);
-                                                    onAdded();
-                                                } catch (err: any) {
-                                                    setError(err.message || 'Failed to remove provider.');
-                                                } finally {
-                                                    setSaving(false);
-                                                }
-                                            }}
-                                            disabled={saving}
-                                            className="flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded bg-red-500/15 text-red-300 hover:text-white hover:bg-red-500/40 transition-colors disabled:opacity-50"
-                                            title={`Remove ${pLabel} provider from team .ctx`}
-                                        >
-                                            <Trash2 size={12} />
-                                            <span>Remove</span>
-                                        </button>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                    {extraDetectedProviders.length > 0 && (
-                        <div className="space-y-1">
-                            <div className="text-[10px] text-gray-400">Detected API keys in env — click to add to .ctx:</div>
-                            <div className="flex flex-wrap gap-1">
-                                {extraDetectedProviders.map((prov: any, idx: number) => {
-                                    const pKey = providerKey(prov);
-                                    const pLabel = providerLabel(prov);
-                                    return (
-                                        <button
-                                            key={`env-${pKey || idx}-${idx}`}
-                                            onClick={() => openProviderModelSelector(prov)}
-                                            disabled={saving}
-                                            className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
-                                        >
-                                            + {pLabel}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-                    {detectedProvidersLoading && (
-                        <div className="text-[10px] text-gray-400">Scanning env for API keys…</div>
-                    )}
-                    <div className="space-y-1 pt-1 border-t theme-border">
-                        <div className="text-[10px] text-gray-400">Scan local providers:</div>
-                        <div className="flex flex-wrap gap-1">
-                            {[
-                                { key: 'ollama', label: 'Ollama' },
-                                { key: 'lmstudio', label: 'LM Studio' },
-                                { key: 'llamacpp', label: 'llama.cpp' },
-                                { key: 'gguf', label: 'GGUF' },
-                            ].map((lp) => (
-                                <button
-                                    key={`local-${lp.key}`}
-                                    onClick={() => openProviderModelSelector({ name: lp.key, provider: lp.key, displayName: lp.label })}
-                                    disabled={saving}
-                                    className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-orange-300 hover:bg-orange-500/20 transition-colors disabled:opacity-50"
-                                >
-                                    + {lp.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    {knownCloudProviders.length > 0 && (
-                        <div className="space-y-1 pt-1 border-t theme-border">
-                            <div className="text-[10px] text-gray-400">Known cloud providers:</div>
-                            <div className="flex flex-wrap gap-1">
-                                {knownCloudProviders.map((prov: any, idx: number) => (
-                                    <button
-                                        key={`known-${prov.key || idx}-${idx}`}
-                                        onClick={() => openProviderModelSelector({ name: prov.key, provider_type: prov.key, displayName: prov.name })}
-                                        disabled={saving}
-                                        className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-cyan-300 hover:bg-cyan-500/20 transition-colors disabled:opacity-50"
-                                    >
-                                        + {prov.name}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                    {teamCtxProviders.length === 0 && extraDetectedProviders.length === 0 && knownCloudProviders.length === 0 && !detectedProvidersLoading && (
-                        <div className="text-[10px] text-gray-400">No providers found in team .ctx or env. Add one manually below.</div>
-                    )}
-                </div>
-            )}
-            {error && (
-                <div className="text-[10px] text-red-400">{error}</div>
-            )}
-            <button
-                onClick={handleSaveNewModel}
-                disabled={saving || !modelName.trim() || !providerName.trim()}
-                className="w-full text-[10px] px-2 py-1 rounded bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white transition-colors"
-            >
-                {saving ? 'Saving...' : 'Save to team .ctx'}
-            </button>
-        </div>
+const removeProviderFromUserModels = async (providerName: string) => {
+    const homeDir = await (window as any).api.getHomeDir();
+    const filePath = `${homeDir}/.incognide/models.yaml`;
+    const result = await (window as any).api.readFileContent(filePath);
+    const raw = typeof result === 'string' ? result : result?.content;
+    const parsed = raw ? yaml.load(raw) || {} : {};
+    const providers = Array.isArray(parsed.providers) ? parsed.providers : [];
+    const pKey = providerName.toLowerCase().replace(/\s+/g, '');
+    const nextProviders = providers.filter((p: any) => providerKey(p) !== pKey);
+    if (nextProviders.length === providers.length) {
+        throw new Error(`Provider "${providerName}" not found in models.yaml.`);
+    }
+    const writeRes = await (window as any).api.writeFileContent(
+        filePath,
+        yaml.dump({ providers: nextProviders }, { sortKeys: false })
     );
+    if (writeRes?.error) throw new Error(writeRes.error);
 };
 
 interface ModelSelectorProps {
     availableModels: ModelItem[];
     selectedModel?: string | null;
     onSelect?: (model: ModelItem) => void;
-    multiSelect?: boolean;
-    selectedModels?: string[];
-    onSelectModels?: (models: string[]) => void;
     placeholder?: string;
     loading?: boolean;
     error?: string | null;
     disabled?: boolean;
-    teamPathForCtx?: string | null;
-    teamCtxProviders?: any[];
-    placement?: 'bottom' | 'top';
-    className?: string;
-    onModelsChanged?: (addedModelValue?: string) => void;
-    allowAdd?: boolean;
-    toolbar?: React.ReactNode;
+    userModelsProviders?: any[];
+    onModelsChanged?: (addedModel?: string) => void;
     favoriteModels?: Set<string>;
     onToggleFavorite?: (value: string) => void;
     showAllModels?: boolean;
     onToggleShowAll?: () => void;
+    className?: string;
+    toolbar?: React.ReactNode;
+    placement?: 'top' | 'bottom';
 }
+
+const QuickAddChip: React.FC<{ keyName: string; active: boolean; loading: boolean; onClick: () => void }> = ({ keyName, active, loading, onClick }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        disabled={loading}
+        className={`px-1.5 py-0.5 rounded border theme-border text-[10px] transition-colors disabled:opacity-40 ${active ? 'bg-blue-600/30 border-blue-500/50' : 'bg-white/5 hover:bg-white/10'} ${providerMeta[keyName]?.color || 'theme-text-secondary'}`}
+    >
+        {loading ? '…' : (providerMeta[keyName]?.name || keyName)}
+    </button>
+);
+
+const AddProviderInline: React.FC<{
+    onSave: (payload: AddProviderPayload) => void | Promise<void>;
+    onCancel: () => void;
+    saving: boolean;
+    onQuickAdd: (key: string) => void | Promise<void>;
+    quickAdding: string | null;
+    existingProviders?: Set<string>;
+}> = ({ onSave, onCancel, saving, onQuickAdd, quickAdding, existingProviders }) => {
+    const [provider, setProvider] = useState('');
+    const [model, setModel] = useState('');
+    const [apiUrl, setApiUrl] = useState('');
+    const [apiKey, setApiKey] = useState('');
+
+    const handleSave = () => {
+        const p = provider.trim();
+        const m = model.trim();
+        if (!p || !m) return;
+        onSave({ provider: p, model: m, apiUrl: apiUrl.trim() || undefined, apiKey: apiKey.trim() || undefined });
+    };
+
+    const chipGroup = (label: string, keys: string[]) => {
+        const visible = keys.filter(s => providerMeta[s] && !existingProviders?.has(s));
+        if (visible.length === 0) return null;
+        return (
+            <div className="space-y-1">
+                <span className="text-[10px] theme-text-muted uppercase tracking-wider">{label}</span>
+                <div className="flex flex-wrap gap-1">
+                    {visible.map(s => (
+                        <QuickAddChip key={s} keyName={s} active={provider === s} loading={quickAdding === s} onClick={() => onQuickAdd(s)} />
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <div className="space-y-1.5 text-xs border-t theme-border pt-2">
+            {chipGroup('API', API_SHORTCUTS)}
+            {chipGroup('Local', LOCAL_SHORTCUTS)}
+            <div className="grid grid-cols-2 gap-1.5">
+                <input
+                    type="text"
+                    value={provider}
+                    onChange={e => setProvider(e.target.value)}
+                    placeholder="Provider"
+                    className="w-full theme-input theme-border border rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500/50"
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } }}
+                />
+                <input
+                    type="text"
+                    value={model}
+                    onChange={e => setModel(e.target.value)}
+                    placeholder="Model"
+                    className="w-full theme-input theme-border border rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500/50"
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } }}
+                />
+            </div>
+            <input
+                type="text"
+                value={apiUrl}
+                onChange={e => setApiUrl(e.target.value)}
+                placeholder="API URL (optional)"
+                className="w-full theme-input theme-border border rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500/50"
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } }}
+            />
+            <input
+                type="password"
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                placeholder="API key (optional)"
+                className="w-full theme-input theme-border border rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500/50"
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } }}
+            />
+            <div className="flex gap-2 pt-1">
+                <button onClick={onCancel} disabled={saving} className="flex-1 px-2 py-1 rounded bg-white/5 theme-text-secondary hover:bg-white/10 text-[10px] transition-colors disabled:opacity-40">Cancel</button>
+                <button onClick={handleSave} disabled={saving || !provider.trim() || !model.trim()} className="flex-1 px-2 py-1 rounded bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white text-[10px] transition-colors">{saving ? 'Saving…' : 'Save'}</button>
+            </div>
+        </div>
+    );
+};
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({
     availableModels,
     selectedModel,
     onSelect,
-    placeholder = 'Select a Model',
+    placeholder = 'Select a model',
     loading = false,
     error = null,
     disabled = false,
-    teamPathForCtx,
-    teamCtxProviders,
-    placement = 'bottom',
-    className = '',
+    userModelsProviders = [],
     onModelsChanged,
-    allowAdd = true,
-    toolbar,
     favoriteModels,
     onToggleFavorite,
+    showAllModels = true,
+    onToggleShowAll,
+    className = '',
+    toolbar,
+    placement = 'bottom',
 }) => {
-    const modelMap = React.useMemo(() => {
-        const map = new Map<string, ModelItem>();
-        for (const m of availableModels) map.set(m.value, m);
-        return map;
-    }, [availableModels]);
+    const [showAddForm, setShowAddForm] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [quickAdding, setQuickAdding] = useState<string | null>(null);
+    const models = useMemo<ModelInfo[]>(() => availableModels.map(toNpctsModel), [availableModels]);
 
-    const models = React.useMemo<ModelInfo[]>(() =>
-        availableModels.map(m => ({
-            id: m.value,
-            displayName: m.display_name || m.value,
-            provider: m.provider || 'Other',
-        })), [availableModels]);
-
-    const byProvider = React.useMemo(() => {
+    const byProvider = useMemo<Record<string, ModelInfo[]>>(() => {
         const map: Record<string, ModelInfo[]> = {};
         for (const m of models) {
             const p = m.provider || 'Other';
@@ -564,48 +279,115 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         return map;
     }, [models]);
 
-    const providers = React.useMemo(() => Object.keys(byProvider).sort(), [byProvider]);
+    const providers = useMemo(() => Object.keys(byProvider).sort(), [byProvider]);
 
-    const handleSelect = (m: ModelInfo) => {
-        const original = modelMap.get(m.id);
-        onSelect?.(original || { value: m.id, display_name: m.displayName, provider: m.provider });
-    };
+    const userProviderKeys = useMemo(
+        () => new Set(userModelsProviders.map((p: any) => providerKey(p)).filter(Boolean)),
+        [userModelsProviders]
+    );
 
-    const handleRemoveProvider = async (providerName: string) => {
-        if (!teamPathForCtx) return;
+    const removableProviders = useMemo(
+        () => new Set(Array.from(userProviderKeys)),
+        [userProviderKeys]
+    );
+
+    const handleAdd = async (payload: AddProviderPayload) => {
+        setSaving(true);
         try {
-            await removeProviderFromTeamCtx(teamPathForCtx, providerName);
-            onModelsChanged?.();
+            await saveProviderToUserModels(payload);
+            setShowAddForm(false);
+            onModelsChanged?.(payload.model);
         } catch (err: any) {
-            // eslint-disable-next-line no-console
-            console.error('Failed to remove provider:', err);
+            console.error('[ModelSelector] add provider failed:', err.message);
+        } finally {
+            setSaving(false);
         }
     };
+
+    const handleQuickAdd = async (key: string) => {
+        setQuickAdding(key);
+        try {
+            const isKnown = KNOWN_PROVIDERS.has(key);
+            const models: string[] = DEFAULT_MODELS[key] ? [DEFAULT_MODELS[key]] : [];
+            const res = await (window as any).api.userModelsUpdate({
+                providerName: key,
+                models,
+                options: isKnown ? {} : {
+                    apiUrl: '',
+                    apiKeyVar: '',
+                },
+            });
+            if (res?.error) throw new Error(res.error);
+            setShowAddForm(false);
+            onModelsChanged?.();
+        } catch (err: any) {
+            console.error('[ModelSelector] quick add failed:', err.message);
+        } finally {
+            setQuickAdding(null);
+        }
+    };
+
+    const addProviderFooter = (
+        <div className="space-y-2">
+            <div className="flex items-center justify-end text-xs">
+                <button
+                    onClick={() => setShowAddForm(v => !v)}
+                    className="text-[10px] px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white transition-colors flex items-center gap-1"
+                >
+                    {showAddForm ? <X size={10} /> : <Plus size={10} />}
+                    {showAddForm ? 'Cancel' : 'Add provider'}
+                </button>
+            </div>
+            {showAddForm && (
+                <AddProviderInline onSave={handleAdd} onCancel={() => setShowAddForm(false)} saving={saving} onQuickAdd={handleQuickAdd} quickAdding={quickAdding} existingProviders={userProviderKeys} />
+            )}
+        </div>
+    );
+
+    const favoriteFooter = onToggleShowAll && favoriteModels && favoriteModels.size > 0 ? (
+        <button
+            onClick={onToggleShowAll}
+            className={`text-[10px] ${showAllModels ? 'text-gray-400 hover:text-gray-300' : 'text-blue-400 hover:text-blue-300'}`}
+        >
+            {showAllModels ? 'Show favorites' : 'Show all'}
+        </button>
+    ) : null;
 
     return (
         <NpctsModelSelector
             models={models}
             byProvider={byProvider}
             providers={providers}
-            selectedModelId={selectedModel}
-            onSelect={handleSelect}
+            selectedModelId={selectedModel || null}
+            onSelect={(m) => {
+                const item = availableModels.find((x) => x.value === m.id);
+                if (item) onSelect?.(item);
+            }}
             loading={loading}
             error={error}
-            disabled={disabled}
             placeholder={placeholder}
             favoriteModels={favoriteModels}
             onToggleFavorite={onToggleFavorite}
+            disabled={disabled}
             toolbar={toolbar}
             placement={placement}
             className={className}
-            onRemoveProvider={teamPathForCtx ? handleRemoveProvider : undefined}
-            dropdownFooter={teamPathForCtx && allowAdd ? (close) => (
-                <AddProviderPanel
-                    teamPath={teamPathForCtx}
-                    teamCtxProviders={teamCtxProviders}
-                    onAdded={(val) => { close(); onModelsChanged?.(val); }}
-                />
-            ) : undefined}
+            removableProviders={removableProviders}
+            onRemoveProvider={async (provider) => {
+                try {
+                    await removeProviderFromUserModels(provider);
+                    onModelsChanged?.();
+                } catch (err: any) {
+                    console.error('[ModelSelector] remove provider failed:', err.message);
+                    throw err;
+                }
+            }}
+            dropdownFooter={favoriteFooter ? (
+                <div className="space-y-2">
+                    {favoriteFooter}
+                    {addProviderFooter}
+                </div>
+            ) : addProviderFooter}
         />
     );
 };

@@ -219,7 +219,8 @@ async function open_pane(
     paneId: actualPaneId || newPaneId,
     type: resolvedType,
     title: info?.title || type,
-    contentId
+    contentId,
+    windowId: ctx.windowId || null
   };
 }
 
@@ -331,7 +332,8 @@ async function split_pane(
     newPaneId: verifiedPaneId || newPaneId,
     type,
     title: PANE_TYPE_INFO[type]?.title || type,
-    contentId
+    contentId,
+    windowId: ctx.windowId || null
   };
 }
 

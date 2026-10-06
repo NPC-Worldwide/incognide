@@ -132,6 +132,13 @@ readPdfText: (filePath) =>
     moveWindowToDisplay: (windowId, displayId) => ipcRenderer.invoke('move-window-to-display', windowId, displayId),
     requestWindowWorkspace: (windowId) => ipcRenderer.invoke('request-window-workspace', windowId),
     restoreWindowWorkspace: (windowId, data) => ipcRenderer.invoke('restore-window-workspace', windowId, data),
+    routeStudioAction: (windowId, payload) => ipcRenderer.invoke('route-studio-action', windowId, payload),
+    reportSavedWorkspaces: (paths) => ipcRenderer.invoke('report-saved-workspaces', paths),
+    onRequestSavedWorkspaces: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('request-saved-workspaces', handler);
+        return () => ipcRenderer.removeListener('request-saved-workspaces', handler);
+    },
     onRestoreWorkspace: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('restore-workspace', handler);
@@ -182,7 +189,7 @@ readPdfText: (filePath) =>
     triggerNewTextFile: () => ipcRenderer.send('trigger-new-text-file'),
     triggerBrowserNewTab: () => ipcRenderer.send('trigger-browser-new-tab'),
 
-    closeWindow: () => ipcRenderer.invoke('close-window'),
+    closeWindow: () => ipcRenderer.send('window-close'),
     showItemInFolder: (path) => ipcRenderer.invoke('show-item-in-folder', path),
 
     getDeviceInfo: () => ipcRenderer.invoke('getDeviceInfo'),
@@ -977,6 +984,8 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     teamsWrite: (teams) => ipcRenderer.invoke('teams:write', teams),
     teamsScan: (currentPath) => ipcRenderer.invoke('teams:scan', currentPath),
     teamUpdateProvider: (args) => ipcRenderer.invoke('team:update-provider', args),
+    userModelsLoad: () => ipcRenderer.invoke('user-models:load'),
+    userModelsUpdate: (args) => ipcRenderer.invoke('user-models:update', args),
     onTeamConfigsUpdated: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('team-configs-updated', handler);

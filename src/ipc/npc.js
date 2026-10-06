@@ -349,7 +349,9 @@ function register(ctx) {
     try {
       const jinx = data.jinx || {};
       let baseDir = data.currentPath || INCOGNIDE_TEAM_PATH;
-      if (data.globalPath) {
+      if (data.scope === 'global') {
+        baseDir = INCOGNIDE_TEAM_PATH;
+      } else if (data.globalPath) {
         try {
           const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
           const content = await fsPromises.readFile(teamsPath, 'utf8');
@@ -392,7 +394,9 @@ function register(ctx) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
       let baseDir = data.currentPath || INCOGNIDE_TEAM_PATH;
-      if (data.scope === 'team' && data.globalPath) {
+      if (data.scope === 'global') {
+        baseDir = INCOGNIDE_TEAM_PATH;
+      } else if (data.scope === 'team' && data.globalPath) {
         try {
           const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
           const content = await fsPromises.readFile(teamsPath, 'utf8');

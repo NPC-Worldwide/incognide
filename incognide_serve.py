@@ -45,6 +45,23 @@ def _install_log_tee():
 
 _install_log_tee()
 
+# Work around a PyInstaller/setuptools incompatibility on macOS: newer setuptools
+# can expose pkg_resources without NullProvider, but PyInstaller's runtime hook
+# (pyi_rth_pkgres.py) subclasses it at import time. If we are frozen, import
+# pkg_resources early and, if necessary, inject a minimal NullProvider stub so
+# the hook can run.
+if getattr(sys, 'frozen', False):
+    try:
+        import pkg_resources
+        if not hasattr(pkg_resources, 'NullProvider'):
+            class _MinimalNullProvider(pkg_resources.EmptyProvider):
+                def __init__(self, module):
+                    self.module = module
+                    super().__init__()
+            pkg_resources.NullProvider = _MinimalNullProvider
+    except Exception:
+        pass
+
 from npcpy.serve import start_flask_server
 
 if __name__ == "__main__":
