@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { AgentEditor, JinxPatternList } from 'npcts';
 import ModelSelector from './ModelSelector';
+import UserModelsEditor from './UserModelsEditor';
 
 import ForceGraph2D from 'react-force-graph-2d';
 
@@ -23,6 +24,7 @@ const NPCTeamMenu = ({
     onOpenJinxTab,
     embedded = false,
     teamKey = undefined,
+    onOpenFile,
 }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -82,8 +84,8 @@ const NPCTeamMenu = ({
     const [availableModels, setAvailableModels] = useState<any[]>([]);
     const [modelsLoading, setModelsLoading] = useState(false);
     const [modelsError, setModelsError] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'agents' | 'models'>('agents');
 
-    const teamPathForCtx = currentPath || teamKey || '';
 
     useEffect(() => {
         const handleKeyDown = (event) => {
@@ -618,10 +620,28 @@ const NPCTeamMenu = ({
                     >
                         <Plus size={16} /> New Agent
                     </button>
+                    <div className="flex-1" />
+                    <div className="flex items-center gap-1 bg-white/5 rounded p-0.5"
+                    >
+                        <button
+                            onClick={() => setActiveTab('agents')}
+                            className={`text-[10px] px-2 py-1 rounded transition-colors ${activeTab === 'agents' ? 'bg-blue-600 text-white' : 'theme-text-secondary hover:bg-white/10'}`}
+                        >
+                            Agents
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('models')}
+                            className={`text-[10px] px-2 py-1 rounded transition-colors ${activeTab === 'models' ? 'bg-blue-600 text-white' : 'theme-text-secondary hover:bg-white/10'}`}
+                        >
+                            Models
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-1 flex flex-col min-h-0">
-                    {selectedNpc && editedNpc ? (
+                    {activeTab === 'models' ? (
+                        <UserModelsEditor onSaved={loadAvailableModels} onOpenRaw={onOpenFile} />
+                    ) : selectedNpc && editedNpc ? (
                         <div className="flex-1 overflow-y-auto p-6">
                         <div className="space-y-6">
                             <div className="flex justify-between items-start gap-4">
@@ -646,7 +666,6 @@ const NPCTeamMenu = ({
                                                 }}
                                                 loading={modelsLoading}
                                                 error={modelsError}
-                                                teamPathForCtx={teamPathForCtx}
                                                 onModelsChanged={loadAvailableModels}
                                             />
                                         )}

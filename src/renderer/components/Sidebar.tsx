@@ -70,7 +70,7 @@ const Sidebar = (props: any) => {
         setJinxMenuOpen,
         setCtxEditorOpen, setTeamManagementOpen, setNpcTeamMenuOpen, setSidebarCollapsed,
         createGraphViewerPane, createBrowserGraphPane, createDataLabelerPane,
-        createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createSkillsManagerPane, createSettingsPane, createProjectEnvPane, createDiskUsagePane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
+        createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createUserModelsEditorPane, createSkillsManagerPane, createSettingsPane, createProjectEnvPane, createDiskUsagePane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
 
         createNewConversation, generateId, streamToPaneRef, availableNPCs, currentNPC, currentModel,
         currentProvider, executionMode, enabledMcpServers, selectedMcpTools, updateContentPane,
@@ -4344,6 +4344,13 @@ onDragStart={(e) => {
                         title={isPredictiveTextEnabled ? "Disable Autocomplete (right-click: Activity Viewer)" : "Enable Autocomplete (right-click: Activity Viewer)"}
                     >
                         <BrainCircuit size={12} className={isPredictiveTextEnabled ? 'text-purple-400' : 'text-gray-400'} />
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); createUserModelsEditorPane?.(); }}
+                        className="flex items-center justify-center w-8 py-4 -my-4 hover:bg-cyan-900/30 transition-all"
+                        title="Models"
+                    >
+                        <Cpu size={12} className="text-cyan-400" />
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); createTeamManagementPane?.(); }}

@@ -260,13 +260,26 @@ const SkillsManager: React.FC<SkillsManagerProps> = ({ currentPath, embedded = t
         }
     }, [newName, newDesc, newPath, newScope, newInputs, newEngine, newCode, currentPath, loadAllJinxes]);
 
+    const normalizeJinxUrl = (url: string) => {
+        try {
+            const u = new URL(url.trim());
+            if (u.hostname === 'github.com') {
+                const match = u.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/);
+                if (match) {
+                    return `https://raw.githubusercontent.com/${match[1]}/${match[2]}/${match[3]}/${match[4]}`;
+                }
+            }
+        } catch {}
+        return url.trim();
+    };
+
     const handleImportUrl = useCallback(async () => {
         if (!importUrl.trim()) return;
         setImportLoading(true);
         setImportError(null);
         try {
             const result = await (window as any).api.ingestJinx({
-                url: importUrl.trim(),
+                url: normalizeJinxUrl(importUrl),
                 scope: importScope,
                 currentPath,
             });
@@ -708,6 +721,26 @@ const SkillsManager: React.FC<SkillsManagerProps> = ({ currentPath, embedded = t
                     Global
                 </button>
             </div>
+
+            {importType === 'repo' && (
+                <div className="space-y-1.5">
+                    <span className="text-[10px] theme-text-muted">Quick import:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                        {[
+                            { label: 'npcsh', url: 'https://github.com/NPC-Worldwide/npcsh.git' },
+                            { label: 'incognide', url: 'https://github.com/NPC-Worldwide/incognide.git' },
+                        ].map((preset) => (
+                            <button
+                                key={preset.label}
+                                onClick={() => { setImportUrl(preset.url); setImportResult(null); setImportError(null); }}
+                                className="text-[10px] px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-700 theme-text-secondary transition"
+                            >
+                                {preset.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {importType === 'url' ? (
                 <div className="space-y-2">

@@ -346,7 +346,11 @@ ipcMain.on('window-maximize', () => {
     else mainWindow.maximize();
 });
 ipcMain.on('window-close', () => {
-    mainWindow?.close();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.close();
+    } else {
+        app.quit();
+    }
 });
 ipcMain.handle('window-is-maximized', () => {
     return mainWindow?.isMaximized() ?? false;
@@ -957,11 +961,11 @@ for r in cur.fetchall():
 cur.execute("""
     SELECT id, role, model, provider, content, input_tokens, output_tokens
     FROM conversation_history
-    WHERE (input_tokens IS NULL OR input_tokens = 0)
+    WHERE role = 'assistant'
+      AND (input_tokens IS NULL OR input_tokens = 0)
       AND (output_tokens IS NULL OR output_tokens = 0)
       AND (cost IS NULL OR cost = '' OR cost = '0' OR cost = '0.0' OR cost = '0.0000' OR CAST(cost AS REAL) = 0.0)
       AND content IS NOT NULL AND content != ''
-      AND role IN ('user', 'assistant')
 """)
 estimated = 0
 for r in cur.fetchall():
@@ -974,14 +978,9 @@ for r in cur.fetchall():
         if not content.strip():
             continue
         full_model = f"{provider}/{model}" if provider and '/' not in model else model
-        if r['role'] == 'assistant':
-            out_tokens = litellm.token_counter(model=full_model, text=content) if content else 0
-            cur.execute('UPDATE conversation_history SET output_tokens = ?, input_tokens = COALESCE(input_tokens, 0) WHERE id = ?', (out_tokens, r['id']))
-            cost = calculate_cost(model, 0, out_tokens, provider=provider)
-        else:
-            in_tokens = litellm.token_counter(model=full_model, text=content) if content else 0
-            cur.execute('UPDATE conversation_history SET input_tokens = ?, output_tokens = COALESCE(output_tokens, 0) WHERE id = ?', (in_tokens, r['id']))
-            cost = calculate_cost(model, in_tokens, 0, provider=provider)
+        out_tokens = litellm.token_counter(model=full_model, text=content) if content else 0
+        cur.execute('UPDATE conversation_history SET output_tokens = ?, input_tokens = COALESCE(input_tokens, 0) WHERE id = ?', (out_tokens, r['id']))
+        cost = calculate_cost(model, 0, out_tokens, provider=provider)
         if cost:
             cur.execute('UPDATE conversation_history SET cost = ? WHERE id = ?', (str(cost), r['id']))
         estimated += 1
@@ -2582,6 +2581,7 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   console.log(`Another instance is already running (mode: ${IS_DEV_MODE ? 'dev' : 'production'})`);
   app.quit();
+  process.exit(0);
 } else {
 
   if (process.defaultApp) {
@@ -3839,13 +3839,11 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-      if (backendProcess) {
-        log('Killing backend process');
-        killBackendProcess();
-      }
-      app.quit();
+    if (backendProcess) {
+      log('Killing backend process');
+      killBackendProcess();
     }
+    app.quit();
   });
 
   app.on('activate', () => {

@@ -34,6 +34,7 @@ interface TeamManagementProps {
     initialJinxName?: string;
     onOpenJinxPane?: (name: string) => void;
     onOpenDatabase?: (path: string) => void;
+    onOpenFile?: (path: string) => void;
     currentModel?: string;
     currentProvider?: string;
     availableModels?: any[];
@@ -582,6 +583,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     initialJinxName,
     onOpenJinxPane,
     onOpenDatabase,
+    onOpenFile,
     currentModel,
     currentProvider,
     availableModels = [],
@@ -1030,6 +1032,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 embedded={true}
                                 teamKey={npcMenuKey}
                                 onOpenJinxTab={onOpenJinxPane}
+                                onOpenFile={onOpenFile}
                             />
                         )}
                         {activeTab === 'jinxes' && (
@@ -1062,7 +1065,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                 )}
                 {activeTab === 'llm-models' && (
                     <div className="flex-1 flex flex-col overflow-hidden">
-                        <ModelManager onStartChat={startNewChat} />
+                        <ModelManager onStartChat={startNewChat} onOpenModelsYaml={async () => { const homeDir = await (window as any).api.getHomeDir?.(); if (homeDir) onOpenFile?.(`${homeDir}/.incognide/models.yaml`); }} />
                     </div>
                 )}
                 {activeTab === 'knowledge' && (

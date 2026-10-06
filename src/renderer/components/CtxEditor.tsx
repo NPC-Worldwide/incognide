@@ -13,7 +13,6 @@ function preprocessJinja(content: string): string {
 
 interface ProviderConfig {
     name: string;
-    provider_type?: string;
     api_url?: string;
     api_key?: string;
     model?: string;
@@ -51,7 +50,7 @@ const MCP_MARKETPLACE: McpMarketplaceItem[] = [
     { id: 'todoist', name: 'Todoist', description: 'Manage tasks and projects in Todoist', category: 'productivity', install: 'npx -y @abhiz123/todoist-mcp-server', envVars: [{ key: 'TODOIST_API_TOKEN', label: 'API Token', placeholder: '', secret: true }] },
 ];
 
-const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase }) => {
+const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase, userModelsProviders = [], reloadUserModelsConfig }) => {
     const [ctx, setCtx] = useState<Record<string, any>>({});
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -204,7 +203,7 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
         const current = getProviders();
         setCtx(prev => ({
             ...prev,
-            providers: [...current, { name: '', provider_type: '', api_url: '', api_key: '', model: '', models: [] }]
+            providers: [...current, { name: '', api_url: '', api_key: '', model: '', models: [] }]
         }));
     };
 
@@ -251,7 +250,7 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
     const scanProviderModels = async (index: number) => {
         const providers = getProviders();
         const prov = providers[index];
-        const providerName = (prov?.provider_type || prov?.name || '').trim();
+        const providerName = (prov?.name || '').trim();
         if (!providerName) {
             setProviderScan(prev => ({ ...prev, [index]: { open: true, error: 'Provider name or type required', loading: false } }));
             return;
@@ -736,10 +735,10 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
                             }}
                             loading={modelsLoading}
                             placeholder="Select default model"
-                            teamPathForCtx={teamPath}
-                            onModelsChanged={(addedModelValue) => {
+                            userModelsProviders={userModelsProviders}
+                            onModelsChanged={() => {
                                 loadModels();
-                                loadContext();
+                                reloadUserModelsConfig?.();
                             }}
                         />
                     </div>
@@ -793,20 +792,13 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
                     {providers.map((prov, idx) => (
                         <div key={idx} className="p-3 bg-gray-900/50 rounded border theme-border space-y-2">
                             
-                            <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                                 <input
                                     type="text"
                                     value={prov.name || ''}
                                     onChange={e => updateProvider(idx, 'name', e.target.value)}
                                     className="theme-input text-sm"
                                     placeholder="Provider name"
-                                />
-                                <input
-                                    type="text"
-                                    value={prov.provider_type || ''}
-                                    onChange={e => updateProvider(idx, 'provider_type', e.target.value)}
-                                    className="theme-input text-sm"
-                                    placeholder="Provider type"
                                 />
                                 <input
                                     type="text"
@@ -881,7 +873,7 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
                                 {providerScan[idx]?.open && (
                                     <div className="mt-2 border theme-border rounded bg-black/20 p-2 space-y-1">
                                         {providerScan[idx]?.loading ? (
-                                            <p className="text-[10px] theme-text-muted animate-pulse">Discovering models for {prov.provider_type || prov.name}...</p>
+                                            <p className="text-[10px] theme-text-muted animate-pulse">Discovering models for {prov.name}...</p>
                                         ) : providerScan[idx]?.error ? (
                                             <p className="text-[10px] text-red-400">{providerScan[idx].error}</p>
                                         ) : (providerScan[idx]?.models || []).length === 0 ? (
