@@ -175,7 +175,7 @@ export const loadTeamCtxFromPath = async (teamPath: string): Promise<any> => {
 export const findProviderForModelFromCtx = (ctx: any, modelValue: string): string | null => {
     if (!ctx || !Array.isArray(ctx.providers)) return null;
     for (const prov of ctx.providers) {
-        const pKey = prov?.provider_type || prov?.name || prov?.provider || '';
+        const pKey = prov?.name || prov?.provider || '';
         if (!pKey) continue;
         if (prov.model === modelValue) return pKey;
         if (Array.isArray(prov.models) && prov.models.includes(modelValue)) return pKey;

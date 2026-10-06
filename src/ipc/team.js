@@ -2,6 +2,10 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs/promises');
 const yaml = require('js-yaml');
+const os = require('os');
+
+const INCOGNIDE_HOME = path.join(os.homedir(), '.incognide');
+const USER_MODELS_PATH = path.join(INCOGNIDE_HOME, 'models.yaml');
 
 function preprocessJinja(content) {
   return content.replace(/(?<!["'])\{\{[^{}]*\}\}(?!["'])/g, (match) => `"${match}"`);
@@ -33,14 +37,13 @@ function writeCtxSync(filePath, ctx) {
 
 function buildUpdatedProviders(providers, providerName, models, options = {}) {
   const next = Array.isArray(providers) ? [...providers] : [];
-  const pType = options.providerType || providerName;
-  const existing = next.find((p) => p.name === providerName || p.provider_type === pType);
+  const existing = next.find((p) => p.name === providerName);
 
   const newEntry = {
     name: providerName,
-    provider_type: pType,
     ...(options.apiUrl ? { api_url: options.apiUrl } : {}),
     ...(options.apiKey ? { api_key: options.apiKey } : {}),
+    ...(options.apiKeyVar ? { api_key_var: options.apiKeyVar } : {}),
   };
 
   if (models === null) {
@@ -122,6 +125,64 @@ function register(ctx) {
       return await updateProviderInTeamCtx(teamPath, providerName, models, options || {});
     } catch (err) {
       log(`[team:update-provider] failed: ${err.message}`);
+      return { error: err.message };
+    }
+  });
+
+  async function ensureUserModelsFile() {
+    try {
+      await fsPromises.mkdir(INCOGNIDE_HOME, { recursive: true });
+      try {
+        await fsPromises.access(USER_MODELS_PATH);
+        return USER_MODELS_PATH;
+      } catch {
+        const defaultContent = `providers: []
+`;
+        await fsPromises.writeFile(USER_MODELS_PATH, defaultContent, 'utf8');
+      }
+      return USER_MODELS_PATH;
+    } catch {
+      return null;
+    }
+  }
+
+  async function readUserModelsConfig() {
+    const filePath = await ensureUserModelsFile();
+    if (!filePath) return { providers: [] };
+    try {
+      const raw = await fsPromises.readFile(filePath, 'utf8');
+      const parsed = yaml.load(preprocessJinja(raw)) || {};
+      return { providers: Array.isArray(parsed.providers) ? parsed.providers : [] };
+    } catch {
+      return { providers: [] };
+    }
+  }
+
+  async function updateUserModelsConfig(providerName, models, options = {}) {
+    const filePath = await ensureUserModelsFile();
+    if (!filePath) throw new Error('Could not access user models file.');
+    const config = await readUserModelsConfig();
+    const providers = buildUpdatedProviders(config.providers, providerName, models, options);
+    await fsPromises.writeFile(filePath, yaml.dump({ providers }, { lineWidth: -1 }), 'utf8');
+    notifyTeamConfigsUpdated(filePath);
+    return { filePath };
+  }
+
+
+  ipcMain.handle('user-models:load', async () => {
+    try {
+      return { config: await readUserModelsConfig(), error: null };
+    } catch (err) {
+      log(`[user-models:load] failed: ${err.message}`);
+      return { config: { providers: [] }, error: err.message };
+    }
+  });
+
+  ipcMain.handle('user-models:update', async (_, { providerName, models, options }) => {
+    try {
+      return await updateUserModelsConfig(providerName, models, options || {});
+    } catch (err) {
+      log(`[user-models:update] failed: ${err.message}`);
       return { error: err.message };
     }
   });

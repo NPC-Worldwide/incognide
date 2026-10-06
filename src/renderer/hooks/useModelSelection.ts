@@ -1,5 +1,14 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 
+const loadUserModelsConfig = async (): Promise<any> => {
+    try {
+        const result = await (window as any).api.userModelsLoad();
+        return result?.config || { providers: [] };
+    } catch {
+        return { providers: [] };
+    }
+};
+
 export function useModelSelection() {
     const [currentModel, setCurrentModel] = useState<string | null>(null);
     const [currentProvider, setCurrentProvider] = useState<string | null>(null);
@@ -17,7 +26,7 @@ export function useModelSelection() {
     const [availableModels, setAvailableModels] = useState<any[]>([]);
     const [modelsLoading, setModelsLoading] = useState(false);
     const [modelsError, setModelsError] = useState(null);
-    const [ollamaToolModels, setOllamaToolModels] = useState(new Set());
+    const [ollamaToolModels, setOllamaToolModels] = useState<Set<string>>(new Set());
     const [availableNPCs, setAvailableNPCs] = useState<any[]>([]);
     const [npcsLoading, setNpcsLoading] = useState(false);
     const [npcsError, setNpcsError] = useState(null);
@@ -31,6 +40,7 @@ export function useModelSelection() {
     });
     const [showAllModels, setShowAllModels] = useState(true);
     const [teamConfigs, setTeamConfigs] = useState<Record<string, any>>({});
+    const [userModelsConfig, setUserModelsConfig] = useState<{ providers: any[] }>({ providers: [] });
     const [modelWarning, setModelWarning] = useState<string | null>(null);
     const [pendingAddedModels, setPendingAddedModels] = useState<string[]>([]);
     const pendingAddedModelsRef = useRef(pendingAddedModels);
@@ -42,6 +52,15 @@ export function useModelSelection() {
     // string[] shape other memos depend on is untouched.
     const [providerModelContext, setProviderModelContext] = useState<Record<string, Record<string, number>>>({});
     const [providerFetchLoading, setProviderFetchLoading] = useState<Record<string, boolean>>({});
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            const config = await loadUserModelsConfig();
+            if (!cancelled) setUserModelsConfig(config);
+        })();
+        return () => { cancelled = true; };
+    }, []);
 
     const currentNpcObject = useMemo(() => {
         if (!currentNPC || availableNPCs.length === 0) return null;
@@ -65,14 +84,17 @@ export function useModelSelection() {
         return [{ value: m, display_name: `${m} | ${p}`, provider: p, context_window: providerModelContext[p]?.[m] ?? null }];
     }, [currentNpcObject, teamConfigs, providerModelContext]);
 
-    const providerKey = (prov: any) => prov?.provider_type || prov?.name || prov?.provider || '';
+    const providerKey = (prov: any) => prov?.name || prov?.provider || '';
 
     const ctxProviders = useMemo(() => {
         // Prefer the live teamConfigs state (updated when the .ctx file changes) over the
         // static _teamConfig embedded on the NPC object.
         const tConf = (currentNpcObject?.team ? teamConfigs[currentNpcObject.team] : null) || currentNpcObject?._teamConfig;
-        return Array.isArray(tConf?.providers) ? tConf.providers : [];
-    }, [currentNpcObject, teamConfigs]);
+        const teamProviders = Array.isArray(tConf?.providers) ? tConf.providers : [];
+        const userProviders = Array.isArray(userModelsConfig.providers) ? userModelsConfig.providers : [];
+        if (userProviders.length === 0) return teamProviders;
+        return [...teamProviders, ...userProviders];
+    }, [currentNpcObject, teamConfigs, userModelsConfig]);
 
     useEffect(() => {
         let cancelled = false;
@@ -291,6 +313,19 @@ export function useModelSelection() {
         return effectiveAvailableModels.filter((m: any) => favoriteModels.has(m.value));
     }, [effectiveAvailableModels, favoriteModels, showAllModels]);
 
+    const reloadUserModelsConfig = async () => {
+        const config = await loadUserModelsConfig();
+        setUserModelsConfig(config);
+    };
+
+    useEffect(() => {
+        if (!(window as any).api?.onTeamConfigsUpdated) return;
+        const cleanup = (window as any).api.onTeamConfigsUpdated(() => {
+            reloadUserModelsConfig();
+        });
+        return cleanup;
+    }, []);
+
     return {
         currentModel,
         setCurrentModel,
@@ -332,5 +367,7 @@ export function useModelSelection() {
         setModelWarning,
         pendingAddedModels,
         setPendingAddedModels,
+        userModelsConfig,
+        reloadUserModelsConfig,
     };
 }

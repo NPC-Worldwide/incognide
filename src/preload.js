@@ -182,7 +182,7 @@ readPdfText: (filePath) =>
     triggerNewTextFile: () => ipcRenderer.send('trigger-new-text-file'),
     triggerBrowserNewTab: () => ipcRenderer.send('trigger-browser-new-tab'),
 
-    closeWindow: () => ipcRenderer.invoke('close-window'),
+    closeWindow: () => ipcRenderer.send('window-close'),
     showItemInFolder: (path) => ipcRenderer.invoke('show-item-in-folder', path),
 
     getDeviceInfo: () => ipcRenderer.invoke('getDeviceInfo'),
@@ -977,6 +977,8 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     teamsWrite: (teams) => ipcRenderer.invoke('teams:write', teams),
     teamsScan: (currentPath) => ipcRenderer.invoke('teams:scan', currentPath),
     teamUpdateProvider: (args) => ipcRenderer.invoke('team:update-provider', args),
+    userModelsLoad: () => ipcRenderer.invoke('user-models:load'),
+    userModelsUpdate: (args) => ipcRenderer.invoke('user-models:update', args),
     onTeamConfigsUpdated: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('team-configs-updated', handler);

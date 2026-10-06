@@ -34,10 +34,13 @@ export function getConversationStats(messages: any[]) {
         return { messageCount: 0, inputTokens: 0, outputTokens: 0, totalCost: 0, models: new Set(), agents: new Set(), providers: new Set() };
     }
     return messages.reduce((acc: any, msg: any) => {
-        acc.inputTokens += (msg.input_tokens || 0);
-        acc.outputTokens += (msg.output_tokens || 0);
-        if (msg.cost) acc.totalCost += msg.cost;
-        if (msg.role !== 'user') {
+        const role = msg?.role;
+        if (role === 'assistant' || role === 'decision') {
+            acc.inputTokens += (msg.input_tokens || 0);
+            acc.outputTokens += (msg.output_tokens || 0);
+            if (msg.cost) acc.totalCost += msg.cost;
+        }
+        if (role !== 'user') {
             if (msg.model) acc.models.add(msg.model);
             if (msg.npc) acc.agents.add(msg.npc);
             if (msg.provider) acc.providers.add(msg.provider);
