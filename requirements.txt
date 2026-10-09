@@ -1,3 +1,7 @@
+# Pin setuptools below 70.0.0 because PyInstaller's pkg_resources runtime hook
+# depends on pkg_resources.NullProvider, which was removed in setuptools 70.
+setuptools<70
+
 flask
 flask_cors
 flask_sse
