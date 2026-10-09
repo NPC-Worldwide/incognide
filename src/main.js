@@ -920,88 +920,10 @@ const ensureTablesExist = async () => {
       }
 
       console.log('[DB] All tables are ready.');
-
-      await backfillMissingCosts();
   } catch (error) {
       console.error('[DB] FATAL: Could not create tables.', error);
   }
 };
-
-async function backfillMissingCosts() {
-    const { spawnSync } = require('child_process');
-    const pythonScript = `
-import os, sys, sqlite3
-try:
-    from npcpy.gen.response import calculate_cost
-    import litellm
-except Exception as e:
-    print('npcpy/litellm import failed:', e)
-    sys.exit(1)
-db_path = sys.argv[1]
-conn = sqlite3.connect(db_path)
-conn.row_factory = sqlite3.Row
-cur = conn.cursor()
-# Backfill rows that already have tokens but no cost
-cur.execute("""
-    SELECT id, model, provider, input_tokens, output_tokens
-    FROM conversation_history
-    WHERE (input_tokens > 0 OR output_tokens > 0)
-      AND (cost IS NULL OR cost = '' OR cost = '0' OR cost = '0.0' OR cost = '0.0000' OR CAST(cost AS REAL) = 0.0)
-""")
-updated = 0
-for r in cur.fetchall():
-    try:
-        cost = calculate_cost(r['model'] or '', r['input_tokens'] or 0, r['output_tokens'] or 0, provider=r['provider'] or '')
-        if cost:
-            cur.execute('UPDATE conversation_history SET cost = ? WHERE id = ?', (str(cost), r['id']))
-            updated += 1
-    except Exception as e:
-        print('cost error:', e)
-# Estimate tokens for rows with content but NULL/zero tokens, then backfill cost
-cur.execute("""
-    SELECT id, role, model, provider, content, input_tokens, output_tokens
-    FROM conversation_history
-    WHERE role = 'assistant'
-      AND (input_tokens IS NULL OR input_tokens = 0)
-      AND (output_tokens IS NULL OR output_tokens = 0)
-      AND (cost IS NULL OR cost = '' OR cost = '0' OR cost = '0.0' OR cost = '0.0000' OR CAST(cost AS REAL) = 0.0)
-      AND content IS NOT NULL AND content != ''
-""")
-estimated = 0
-for r in cur.fetchall():
-    try:
-        model = r['model'] or ''
-        provider = r['provider'] or ''
-        content = r['content'] or ''
-        if isinstance(content, bytes):
-            content = content.decode('utf-8', errors='ignore')
-        if not content.strip():
-            continue
-        full_model = f"{provider}/{model}" if provider and '/' not in model else model
-        out_tokens = litellm.token_counter(model=full_model, text=content) if content else 0
-        cur.execute('UPDATE conversation_history SET output_tokens = ?, input_tokens = COALESCE(input_tokens, 0) WHERE id = ?', (out_tokens, r['id']))
-        cost = calculate_cost(model, 0, out_tokens, provider=provider)
-        if cost:
-            cur.execute('UPDATE conversation_history SET cost = ? WHERE id = ?', (str(cost), r['id']))
-        estimated += 1
-    except Exception as e:
-        print('estimate error:', e)
-conn.commit()
-conn.close()
-print(f'backfilled {updated} costs, estimated {estimated} rows')
-`;
-    const tempPath = path.join(os.tmpdir(), `incognide-cost-backfill-${Date.now()}.py`);
-    try {
-        fs.writeFileSync(tempPath, pythonScript);
-        const result = spawnSync('python3', [tempPath, dbPath], { encoding: 'utf-8', timeout: 120000 });
-        if (result.stdout) console.log('[COST_BACKFILL]', result.stdout.trim());
-        if (result.stderr) console.error('[COST_BACKFILL]', result.stderr.trim());
-    } catch (err) {
-        console.error('[COST_BACKFILL] Failed:', err.message);
-    } finally {
-        try { fs.unlinkSync(tempPath); } catch {}
-    }
-}
 
 app.setAppUserModelId('com.incognide.chat');
 app.name = 'incognide';
@@ -2171,14 +2093,16 @@ window.__addLog = function(msg) {
     if (!serverReady) {
       const triedBinary = _backendPath;
       const exitCode = backendProcess?.exitCode;
-      log(`Bundled backend failed to start (binary: ${triedBinary}, exitCode: ${exitCode ?? 'null'}) — checking source fallback...`);
 
       // If the bundled binary is broken (e.g. PyInstaller/pkg_resources mismatch),
-      // fall back to running the local source script directly.
+      // and the user has explicitly configured a Python interpreter, fall back to
+      // running the local source script directly. This is disabled in packaged builds
+      // unless BACKEND_PYTHON_PATH is set in ~/.incogniderc.
       const sourceScriptPath = path.join(app.getAppPath(), 'incognide_serve.py');
       const sourcePython = getBackendPythonPath();
-      if (fs.existsSync(sourceScriptPath) && sourcePython && fs.existsSync(sourcePython) && spawnMode === 'bundled') {
-        log(`Falling back to source backend: ${sourcePython} -u ${sourceScriptPath}`);
+      const canSourceFallback = spawnMode === 'bundled' && fs.existsSync(sourceScriptPath) && sourcePython && fs.existsSync(sourcePython);
+      if (canSourceFallback) {
+        log(`Bundled backend failed to start (binary: ${triedBinary}, exitCode: ${exitCode ?? 'null'}) — falling back to configured Python: ${sourcePython}`);
         await killBackendProcess();
         _backendPath = sourcePython;
         _spawnArgs = ['-u', sourceScriptPath];
