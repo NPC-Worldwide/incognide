@@ -41,6 +41,7 @@ describe('ModelManager custom provider', () => {
     vi.clearAllMocks();
 
     const api = window.api as any;
+    api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [] } });
 
     // Simulate no detected provider keys in the environment. This is the
     // common case for local LLM endpoints that do not require an API key.
@@ -76,6 +77,28 @@ describe('ModelManager custom provider', () => {
     api.onOllamaPullProgress = vi.fn(() => () => {});
     api.onOllamaPullComplete = vi.fn(() => () => {});
     api.onOllamaPullError = vi.fn(() => () => {});
+  });
+
+  it('discovers models for a configured API Route provider', async () => {
+    const api = window.api as any;
+    api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{
+      name: 'api_route',
+      api_url: 'https://global.api-route.com/v1',
+      api_key_var: 'API_ROUTE_API_KEY',
+    }] } });
+    api.getProviderModels = vi.fn().mockResolvedValue({ models: [
+      { id: 'gpt-6.1-sol', name: 'gpt-6.1-sol', provider: 'api_route' },
+    ] });
+    const user = userEvent.setup();
+    render(<ModelManager />);
+    const label = await screen.findByText('API Route');
+    await user.click(label.closest('button')!);
+    await waitFor(() => expect(api.getProviderModels).toHaveBeenCalledWith({
+      provider: 'api_route',
+      baseUrl: 'https://global.api-route.com/v1',
+      apiKeyVar: 'API_ROUTE_API_KEY',
+    }));
+    expect(await screen.findByText('gpt-6.1-sol')).toBeInTheDocument();
   });
 
   it('shows a custom provider added without an API key', async () => {

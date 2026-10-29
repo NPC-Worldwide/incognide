@@ -2563,6 +2563,7 @@ function register(ctx) {
     { provider: 'azure_ai', envVar: 'AZURE_AI_API_KEY', baseUrl: 'https://{your-resource}.cognitiveservices.azure.com', displayName: 'Azure AI' },
     { provider: 'bedrock', envVar: 'AWS_ACCESS_KEY_ID', baseUrl: 'https://bedrock-runtime.{region}.amazonaws.com', displayName: 'Amazon Bedrock' },
     { provider: 'cerebras', envVar: 'CEREBRAS_API_KEY', baseUrl: 'https://api.cerebras.ai/v1', displayName: 'Cerebras' },
+    { provider: 'api_route', envVar: 'API_ROUTE_API_KEY', baseUrl: 'https://global.api-route.com/v1', displayName: 'API Route' },
     { provider: 'cheaperinference', envVar: 'CHEAPERINFERENCE_API_KEY', baseUrl: 'https://api.cheaperinference.com/v1', displayName: 'Cheaper Inference' },
     { provider: 'cloudflare', envVar: 'CLOUDFLARE_API_KEY', baseUrl: 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai', displayName: 'Cloudflare AI' },
     { provider: 'cohere', envVar: 'COHERE_API_KEY', baseUrl: 'https://api.cohere.com/v1', displayName: 'Cohere' },

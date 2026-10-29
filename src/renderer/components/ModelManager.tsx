@@ -14,6 +14,7 @@ const LOCAL_PROVIDERS: Record<string, any> = {
 };
 
 export const API_PROVIDER_META: Record<string, { name: string; color: string; bgColor: string; docsUrl: string; defaultModel?: string }> = {
+    api_route: { name: 'API Route', color: 'text-teal-400', bgColor: 'bg-teal-600', docsUrl: 'https://api-route.com', defaultModel: 'gpt-6.1-sol' },
     anthropic: { name: 'Anthropic', color: 'text-amber-400', bgColor: 'bg-amber-600', docsUrl: 'https://docs.anthropic.com/en/docs/about-claude/models', defaultModel: 'claude-sonnet-4' },
     cheaperinference: { name: 'Cheaper Inference', color: 'text-emerald-400', bgColor: 'bg-emerald-600', docsUrl: 'https://cheaperinference.com/docs', defaultModel: 'gpt-5.4-mini' },
     deepseek: { name: 'DeepSeek', color: 'text-cyan-400', bgColor: 'bg-cyan-600', docsUrl: 'https://api-docs.deepseek.com/', defaultModel: 'deepseek-chat' },

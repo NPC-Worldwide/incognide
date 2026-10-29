@@ -84,6 +84,15 @@ GGUF / GGML model files can be loaded directly without a server, but only if **l
 
 Add API keys on the **Cloud keys** step of the wizard, or later in **Settings → Global Settings** or **Team Management → API keys**. Keys are stored in `~/.incogniderc` as `export <PROVIDER>_API_KEY=...`.
 
+#### API Route
+
+Get your own key from [API Route](https://api-route.com) and save it as
+`API_ROUTE_API_KEY` in Global Settings or `~/.incogniderc`. Restart Incognide
+after changing environment variables. Model Manager detects API Route and uses
+`https://global.api-route.com/v1` for its OpenAI-compatible API. Add the detected
+provider, then expand its card to load the models available to your key;
+`gpt-6.1-sol` is the default model. API usage is billed separately by API Route.
+
 #### OrcaRouter
 
 [OrcaRouter](https://www.orcarouter.ai) is a first-class provider, so it appears in the provider list and the model selector like any other. It offers two independent ways to connect, both shown in the OrcaRouter card in **Model Manager**:
