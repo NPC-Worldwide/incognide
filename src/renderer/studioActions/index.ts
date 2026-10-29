@@ -54,7 +54,6 @@ export function registerAction(
   meta: StudioActionMeta = {}
 ): void {
   actions[name] = { handler, meta };
-  console.log('[StudioActions] Registered:', name);
 }
 
 let initialized = false;

@@ -128,7 +128,11 @@ import { getFileName,
     getThumbnailIcon,
     findNodeByPath,
     findNodePath,
-    stripSourcePrefix
+    stripSourcePrefix,
+    resolveNpcBySelection,
+    npcBareName,
+    preloadNpcTools,
+    npcSelectionToName
 } from './utils';
 import { collectPaneInfo } from '../studioActions/paneActions';
 import { collectPaneIds } from './LayoutNode';
@@ -1138,11 +1142,16 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         const pd = contentDataRef.current[activeContentPaneId];
         if (!pd || (pd.contentType !== 'chat' && pd.contentType !== 'agent')) return;
         let changed = false;
-        if (!pd.npc && currentNPC) { pd.npc = currentNPC; changed = true; }
+        if (!pd.npc && currentNPC) { pd.npc = npcSelectionToName(availableNPCs, currentNPC) || currentNPC; changed = true; }
         if (!pd.model && currentModel) { pd.model = currentModel; changed = true; }
         if (!pd.provider && currentProvider) { pd.provider = currentProvider; changed = true; }
         if (changed) paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: activeContentPaneId } }));
-    }, [activeContentPaneId, currentNPC, currentModel, currentProvider]);
+    }, [activeContentPaneId, currentNPC, currentModel, currentProvider, availableNPCs]);
+
+    useEffect(() => {
+        if (!availableNPCs?.length) return;
+        preloadNpcTools(availableNPCs, currentPath);
+    }, [availableNPCs, currentPath]);
 
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     useEffect(() => {
@@ -2626,6 +2635,23 @@ const handleSendToTerminal = useCallback((text: string) => {
 }, []);
 
 
+const handleMessageOpenFile = useCallback((path: string, nodeId: string) => {
+    const ext = path.split('.').pop()?.toLowerCase();
+    let contentType = 'editor';
+    if (ext === 'pdf') contentType = 'pdf';
+    else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext || '')) contentType = 'image';
+    else if (ext === 'stl') contentType = 'stl';
+    else if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v', 'flv', 'ogv'].includes(ext || '')) contentType = 'video';
+    else if (['csv', 'xlsx', 'xls', 'ods'].includes(ext || '')) contentType = 'csv';
+    else if (['docx', 'doc', 'odt', 'odp'].includes(ext || '')) contentType = 'docx';
+    else if (ext === 'pptx') contentType = 'pptx';
+    else if (ext === 'tex') contentType = 'latex';
+    const nodePath = findNodePath(rootLayoutNodeRef.current, nodeId);
+    if (nodePath) {
+        performSplit(nodePath, 'right', contentType, path);
+    }
+}, [findNodePath, performSplit]);
+
 const renderChatView = useCallback(({ nodeId }) => {
     const paneData = contentDataRef.current[nodeId];
     if (!paneData || !paneData.chatMessages) {
@@ -2634,7 +2660,6 @@ const renderChatView = useCallback(({ nodeId }) => {
 
     const messages = paneData.chatMessages.messages || [];
     const pendingMessages = paneData.pendingQueue || [];
-    console.log(`[renderChatView] nodeId=${nodeId} messages=${messages.length} ids=${JSON.stringify(messages.map((m: any) => m?.message_id || m?.id))}`);
 
     return (
         <div className="p-4 space-y-4">
@@ -2644,30 +2669,15 @@ const renderChatView = useCallback(({ nodeId }) => {
                     message={msg}
                     searchTerm={searchTerm}
                     isCurrentSearchResult={false}
-                    onResendMessage={() => handleResendMessage(msg)}
+                    onResendMessage={handleResendMessage}
                     onLabelMessage={handleLabelMessage}
                     messageLabel={messageLabels[msg.id || msg.timestamp]}
                     conversationId={paneData.contentId}
                     isAgentMode={paneData.executionMode !== 'chat'}
                     availableModels={availableModels}
                     availableNPCs={availableNPCs}
-                    onOpenFile={(path: string) => {
-                        const ext = path.split('.').pop()?.toLowerCase();
-                        let contentType = 'editor';
-                        if (ext === 'pdf') contentType = 'pdf';
-                        else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext || '')) contentType = 'image';
-                        else if (ext === 'stl') contentType = 'stl';
-                        else if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v', 'flv', 'ogv'].includes(ext || '')) contentType = 'video';
-                        else if (['csv', 'xlsx', 'xls', 'ods'].includes(ext || '')) contentType = 'csv';
-                        else if (['docx', 'doc', 'odt', 'odp'].includes(ext || '')) contentType = 'docx';
-                        else if (ext === 'pptx') contentType = 'pptx';
-                        else if (ext === 'tex') contentType = 'latex';
-
-                        const nodePath = findNodePath(rootLayoutNodeRef.current, nodeId);
-                        if (nodePath) {
-                            performSplit(nodePath, 'right', contentType, path);
-                        }
-                    }}
+                    paneNodeId={nodeId}
+                    onOpenFile={handleMessageOpenFile}
                 />
             ))}
             {pendingMessages.map((msg: any, idx: number) => (
@@ -2683,7 +2693,8 @@ const renderChatView = useCallback(({ nodeId }) => {
                     isAgentMode={paneData.executionMode !== 'chat'}
                     availableModels={availableModels}
                     availableNPCs={availableNPCs}
-                    onOpenFile={() => {}}
+                    paneNodeId={nodeId}
+                    onOpenFile={handleMessageOpenFile}
                 />
             ))}
             {paneData.permissionRequests?.length > 0 && (
@@ -4587,7 +4598,7 @@ const handleBrowserDialogNavigate = (url) => {
         setUploadedFiles([]);
 
         if (targetPaneId && contentDataRef.current[targetPaneId]) {
-            contentDataRef.current[targetPaneId].npc = currentNPC;
+            contentDataRef.current[targetPaneId].npc = npcSelectionToName(availableNPCs, currentNPC) || currentNPC;
             contentDataRef.current[targetPaneId].model = paneModel;
             contentDataRef.current[targetPaneId].provider = paneProvider;
         }
@@ -4657,7 +4668,7 @@ const handleBrowserDialogNavigate = (url) => {
             timestamp: new Date().toISOString(),
             isStreaming: true,
             streamId: newStreamId,
-            npc: queueItem.currentNPC,
+            npc: npcSelectionToName(availableNPCs, queueItem.currentNPC),
             model: queueItem.paneModel,
             provider: queueItem.paneProvider,
             temperature: queueItem.genParams.temperature,
@@ -4684,7 +4695,7 @@ const handleBrowserDialogNavigate = (url) => {
                 directory_path: currentPath,
                 model: queueItem.paneModel,
                 provider: queueItem.paneProvider,
-                npc: queueItem.currentNPC,
+                npc: npcSelectionToName(availableNPCs, queueItem.currentNPC),
                 execution_mode: queueItem.executionMode,
                 parent_message_id: userMessage.parent_message_id || null,
             };
@@ -4694,7 +4705,7 @@ const handleBrowserDialogNavigate = (url) => {
                 conversationId,
                 paneId: targetPaneId,
                 paneType: paneData.contentType,
-                npc: queueItem.currentNPC,
+                npc: npcSelectionToName(availableNPCs, queueItem.currentNPC),
                 model: queueItem.paneModel,
                 provider: queueItem.paneProvider,
                 length: (userMessage.content || '').length,
@@ -4702,8 +4713,8 @@ const handleBrowserDialogNavigate = (url) => {
                 jinxName: queueItem.jinxName || undefined,
             });
 
-            const selectedNpc = availableNPCs.find((n: any) => n.value === queueItem.currentNPC);
-            const npcName = queueItem.currentNPC?.replace(/^(project:|global:)/, '') || 'agent';
+            const selectedNpc = resolveNpcBySelection(availableNPCs, queueItem.currentNPC);
+            const npcName = selectedNpc?.name || queueItem.currentNPC?.replace(/^(project:|global:)/, '') || 'agent';
             const npcSource = selectedNpc?.source || 'global';
 
             const currentPanes = rootLayoutNode ? collectPaneInfo(rootLayoutNode, contentDataRef.current, activeContentPaneId) : [];
@@ -4816,7 +4827,7 @@ const handleBrowserDialogNavigate = (url) => {
         const conversationId = activePaneData.contentId;
         let newStreamId: string | null = null;
 
-        const selectedNpc = availableNPCs.find((npc: any) => npc.value === selectedNPC);
+        const selectedNpc = resolveNpcBySelection(availableNPCs, selectedNPC);
         const paneProvider = activePaneData?.provider || currentProvider;
         const selectedModelObj = availableModels.find((m: any) => m.value === selectedModel);
         const providerToUse = selectedModelObj?.provider || paneProvider;
@@ -4865,7 +4876,7 @@ const handleBrowserDialogNavigate = (url) => {
     const createNewConversation = useCallback(async (skipMessageLoad: boolean | { contentType?: 'chat' | 'agent'; npc?: string; model?: string; provider?: string } = false) => {
         const opts = typeof skipMessageLoad === 'object' ? skipMessageLoad : {};
         const contentType: 'chat' | 'agent' = opts.contentType || 'chat';
-        const npcToUse = opts.npc !== undefined ? opts.npc : currentNPC;
+        const npcToUse = npcSelectionToName(availableNPCs, opts.npc !== undefined ? opts.npc : currentNPC);
         const modelToUse = opts.model !== undefined ? opts.model : currentModel;
         try {
             const conversation = await window.api.createConversation({ directory_path: currentPath });
@@ -5000,7 +5011,7 @@ const handleBrowserDialogNavigate = (url) => {
                 onClose={() => {}}
                 currentPath={currentPath}
                 startNewConversation={(npc) => {
-                    setCurrentNPC(npc.name || npc);
+                    setCurrentNPC(resolveNpcBySelection(availableNPCs, npc.name || npc)?.value ?? (npc.name || npc));
                     createNewConversation();
                 }}
                 embedded={true}
@@ -5068,7 +5079,7 @@ const handleBrowserDialogNavigate = (url) => {
                 onClose={() => {}}
                 currentPath={currentPath}
                 startNewConversation={(npc) => {
-                    setCurrentNPC(npc.name || npc);
+                    setCurrentNPC(resolveNpcBySelection(availableNPCs, npc.name || npc)?.value ?? (npc.name || npc));
                     createNewConversation();
                 }}
                 startNewChat={(model: string, provider: string) => {
@@ -5728,7 +5739,7 @@ const handleBrowserDialogNavigate = (url) => {
                     targetConvoId = storedConvoId;
                     const lastUsedInConvo = await window.api.getLastUsedInConversation(targetConvoId);
                     if (lastUsedInConvo?.npc) {
-                        const validNpc = fetchedNPCs.find((n: any) => n.value === lastUsedInConvo.npc);
+                        const validNpc = resolveNpcBySelection(fetchedNPCs, lastUsedInConvo.npc);
                         if (validNpc) npcToSet = validNpc.value;
                     }
                     if (lastUsedInConvo?.model) {
@@ -5771,7 +5782,7 @@ const handleBrowserDialogNavigate = (url) => {
             if (!modelToSet) {
                 const lastUsedInDir = await window.api.getLastUsedInDirectory(currentPath);
                 if (lastUsedInDir?.npc) {
-                    const validNpc = fetchedNPCs.find((n: any) => n.value === lastUsedInDir.npc);
+                    const validNpc = resolveNpcBySelection(fetchedNPCs, lastUsedInDir.npc);
                     if (validNpc) npcToSet = validNpc.value;
                 }
                 if (lastUsedInDir?.model) {
@@ -6943,9 +6954,10 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
             for (let i = allMsgs.length - 1; i >= 0; i--) {
                 const msg = allMsgs[i];
                 if (msg.role === 'assistant') {
-                    if (msg.npc && availableNPCs.some((n: any) => n.value === msg.npc || n.name === msg.npc)) {
-                        setCurrentNPC(msg.npc);
-                        setSelectedNPCs([msg.npc]);
+                    const matchedNpc = msg.npc ? resolveNpcBySelection(availableNPCs, msg.npc) : null;
+                    if (matchedNpc) {
+                        setCurrentNPC(matchedNpc.value);
+                        setSelectedNPCs([matchedNpc.value]);
                     }
                     if (msg.model) {
                         setPaneModel(paneIdToUpdate, msg.model);
@@ -7457,8 +7469,8 @@ const paneItems = Object.entries(contentDataRef.current)
         const ct = data.contentType;
         let title = PANE_TITLES[ct] || ct || 'Pane';
         const shortId = data?.contentId?.slice(-6) || '';
-        if (ct === 'chat') title = `${data?.npc || 'Chat'} ${shortId}`.trim();
-        else if (ct === 'agent') title = `${data?.npc || 'Agent'} ${shortId}`.trim();
+        if (ct === 'chat') title = `${npcBareName(data?.npc) || 'Chat'} ${shortId}`.trim();
+        else if (ct === 'agent') title = `${npcBareName(data?.npc) || 'Agent'} ${shortId}`.trim();
         else if (ct === 'editor') title = getFileName(data?.contentId) || 'File';
         else if (ct === 'terminal') title = `Terminal${data?.shellType ? ` (${data.shellType})` : ''}`;
         return { id: paneId, type: ct, title, isActive: paneId === activeContentPaneId };

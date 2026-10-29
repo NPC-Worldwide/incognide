@@ -280,7 +280,7 @@ Please provide only the SQL query without any markdown formatting or explanation
                 conversationId: null,
                 model: currentModel,
                 provider: currentProvider,
-                npc: currentNPC,
+                npc: currentNPC ? currentNPC.split('/').pop() : currentNPC,
                 streamId: newStreamId,
                 attachments: []
             });

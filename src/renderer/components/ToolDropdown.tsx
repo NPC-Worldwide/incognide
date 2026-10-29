@@ -31,6 +31,7 @@ export const ToolDropdown: React.FC<ToolDropdownProps> = ({
     const [search, setSearch] = useState('');
     const [pos, setPos] = useState<{ bottom: number; left: number; width: number } | null>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
     const searchRef = useRef<HTMLInputElement>(null);
 
     const filteredTools = useMemo(() => {
@@ -44,20 +45,9 @@ export const ToolDropdown: React.FC<ToolDropdownProps> = ({
     }, [tools, search]);
 
     useEffect(() => {
-        if (!open) {
-            setPos(null);
-            return;
-        }
+        if (!open) return;
         setSearch('');
         setTimeout(() => searchRef.current?.focus(), 50);
-        const rect = wrapperRef.current?.getBoundingClientRect();
-        if (rect) {
-            setPos({
-                bottom: window.innerHeight - rect.top + 4,
-                left: rect.left,
-                width: rect.width
-            });
-        }
         const onResize = () => {
             const r = wrapperRef.current?.getBoundingClientRect();
             if (r) setPos({ bottom: window.innerHeight - r.top + 4, left: r.left, width: r.width });
@@ -69,9 +59,9 @@ export const ToolDropdown: React.FC<ToolDropdownProps> = ({
     useEffect(() => {
         if (!open) return;
         const onClick = (e: MouseEvent) => {
-            if (!wrapperRef.current?.contains(e.target as Node)) {
-                setOpen(false);
-            }
+            const target = e.target as Node;
+            if (wrapperRef.current?.contains(target) || dropdownRef.current?.contains(target)) return;
+            setOpen(false);
         };
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') setOpen(false);
@@ -97,8 +87,9 @@ export const ToolDropdown: React.FC<ToolDropdownProps> = ({
 
     const dropdown = open && !loading && pos && (
         <div
-            className="fixed z-[100] theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden"
-            style={{ bottom: pos.bottom, left: pos.left, width: Math.max(pos.width, 280) }}
+            ref={dropdownRef}
+            className="fixed z-[100] theme-bg-primary theme-border border rounded-lg shadow-2xl overflow-hidden"
+            style={{ bottom: pos.bottom, left: pos.left, width: Math.max(pos.width, 280), transform: 'translateZ(0)' }}
         >
             <div className="px-2 py-1.5 border-b theme-border flex items-center justify-between">
                 <span className="text-[10px] uppercase tracking-wide text-gray-500">Select a tool</span>
@@ -188,7 +179,15 @@ export const ToolDropdown: React.FC<ToolDropdownProps> = ({
                 <button
                     type="button"
                     disabled={disabled || loading}
-                    onClick={() => setOpen((v) => !v)}
+                    onClick={() => {
+                        if (!open) {
+                            const rect = wrapperRef.current?.getBoundingClientRect();
+                            if (rect) setPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left, width: rect.width });
+                            setOpen(true);
+                        } else {
+                            setOpen(false);
+                        }
+                    }}
                     className="flex-1 flex items-center justify-center gap-1 min-w-0"
                 >
                     <Wrench size={12} className="flex-shrink-0 opacity-70" />

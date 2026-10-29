@@ -1,5 +1,5 @@
-import { getFileName } from './utils';
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { getFileName, npcSelectionToName, npcBareName, resolveNpcBySelection, npcTeamPathsFor, getNpcToolsCached } from './utils';
+import React, { useState, useRef, useEffect, useMemo, startTransition } from 'react';
 import { createPortal } from 'react-dom';
 import { BACKEND_URL } from '../config';
 import {
@@ -166,12 +166,14 @@ const NPCDropdown: React.FC<NPCDropdownProps> = ({
     disabled = false,
 }) => {
     const [open, setOpen] = useState(false);
+    const [pendingValue, setPendingValue] = useState<string | null>(null);
     const [search, setSearch] = useState('');
     const [collapsedTeams, setCollapsedTeams] = useState<Record<string, boolean>>({});
     const [pos, setPos] = useState<{ bottom: number; left: number; width: number } | null>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
     const searchRef = useRef<HTMLInputElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
     const teamSections = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -196,28 +198,21 @@ const NPCDropdown: React.FC<NPCDropdownProps> = ({
         return { sections: sectionOrder.map(team => ({ team, npcs: byTeam[team] })) };
     }, [availableNPCs, search]);
 
+    useEffect(() => { setPendingValue(null); }, [selectedNPCs]);
+
     const label = loading ? '...' : error ? 'Error' :
-        selectedNPCs.length === 1
-            ? ((availableNPCs.find((n: any) => n.value === selectedNPCs[0])?.display_name || selectedNPCs[0]).split(' | ')[0])
+        pendingValue
+            ? (availableNPCs.find((n: any) => n.value === pendingValue)?.display_name || npcBareName(pendingValue) || '').split(' | ')[0]
+            : selectedNPCs.length === 1
+            ? (availableNPCs.find((n: any) => n.value === selectedNPCs[0])?.display_name || npcBareName(selectedNPCs[0]) || '').split(' | ')[0]
             : selectedNPCs.length === 0
                 ? placeholder
                 : `${selectedNPCs.length} agents`;
 
     useEffect(() => {
-        if (!open) {
-            setPos(null);
-            return;
-        }
+        if (!open) return;
         setSearch('');
         setTimeout(() => searchRef.current?.focus(), 50);
-        const rect = wrapperRef.current?.getBoundingClientRect();
-        if (rect) {
-            setPos({
-                bottom: window.innerHeight - rect.top + 4,
-                left: rect.left,
-                width: rect.width,
-            });
-        }
         const onResize = () => {
             const r = wrapperRef.current?.getBoundingClientRect();
             if (r) setPos({ bottom: window.innerHeight - r.top + 4, left: r.left, width: r.width });
@@ -229,9 +224,9 @@ const NPCDropdown: React.FC<NPCDropdownProps> = ({
     useEffect(() => {
         if (!open) return;
         const onClick = (e: MouseEvent) => {
-            if (!wrapperRef.current?.contains(e.target as Node)) {
-                setOpen(false);
-            }
+            const target = e.target as Node;
+            if (wrapperRef.current?.contains(target) || dropdownRef.current?.contains(target)) return;
+            setOpen(false);
         };
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') setOpen(false);
@@ -246,15 +241,19 @@ const NPCDropdown: React.FC<NPCDropdownProps> = ({
 
     const toggleNpc = (value: string) => {
         if (broadcastMode) {
+            setPendingValue(null);
             const next = selectedNPCs.includes(value)
                 ? selectedNPCs.filter((v) => v !== value)
                 : [...selectedNPCs, value];
-            onChangeSelected(next.length ? next : [currentNPC || value]);
-            if (!selectedNPCs.includes(value)) onSelectCurrent(value);
+            startTransition(() => onChangeSelected(next.length ? next : [currentNPC || value]));
+            if (!selectedNPCs.includes(value)) startTransition(() => onSelectCurrent(value));
         } else {
-            onChangeSelected([value]);
-            onSelectCurrent(value);
             setOpen(false);
+            setPendingValue(value);
+            startTransition(() => {
+                onChangeSelected([value]);
+                onSelectCurrent(value);
+            });
         }
     };
 
@@ -275,8 +274,9 @@ const NPCDropdown: React.FC<NPCDropdownProps> = ({
 
     const dropdown = open && !loading && !error && pos && (
         <div
-            className="npc-agent-selector-dropdown fixed z-[100] theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden"
-            style={{ bottom: pos.bottom, left: pos.left, width: Math.max(pos.width, 256) }}
+            ref={dropdownRef}
+            className="npc-agent-selector-dropdown fixed z-[100] theme-bg-primary theme-border border rounded-lg shadow-2xl overflow-hidden"
+            style={{ bottom: pos.bottom, left: pos.left, width: Math.max(pos.width, 256), transform: 'translateZ(0)' }}
         >
             <div className="px-2 py-1.5 border-b theme-border">
                 <input
@@ -333,7 +333,7 @@ const NPCDropdown: React.FC<NPCDropdownProps> = ({
                         <div className="flex flex-col">
                             {npcs.map((npc: any) => {
                                 const value = npc.value;
-                                const checked = selectedNPCs.includes(value);
+                                const checked = broadcastMode ? selectedNPCs.includes(value) : (pendingValue ? pendingValue === value : selectedNPCs.includes(value));
                                 return (
                                     <div
                                         key={`${npc.source || 'npc'}-${value}`}
@@ -368,8 +368,14 @@ const NPCDropdown: React.FC<NPCDropdownProps> = ({
                 type="button"
                 disabled={disabled || loading || !!error}
                 onClick={() => {
-                    if (!open) onOpen?.();
-                    setOpen((v) => !v);
+                    if (!open) {
+                        onOpen?.();
+                        const rect = wrapperRef.current?.getBoundingClientRect();
+                        if (rect) setPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left, width: rect.width });
+                        setOpen(true);
+                    } else {
+                        setOpen(false);
+                    }
                 }}
                 className={`w-full h-7 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 border px-2 ${
                     selectedNPCs.length > 1
@@ -620,7 +626,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                     currentPath,
                     model: currentModel,
                     provider: currentProvider,
-                    npc: currentNPC,
+                    npc: npcSelectionToName(availableNPCs, currentNPC),
                     instructions: compressInstructions,
                 }),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Compression timed out after 15s')), 15000)),
@@ -802,12 +808,10 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         if (!npcName) return;
         setNpcToolsLoading(true);
         try {
-            const teamsData = await (window as any).api.teamsRead?.() || {};
-            const registeredTeams = Object.values(teamsData.teams || {});
-            const teamPaths = registeredTeams;
-            const url = `${BACKEND_URL}/api/npc_tools?npc=${encodeURIComponent(npcName)}&registered_teams=${encodeURIComponent(teamPaths.join(','))}&currentPath=${encodeURIComponent(currentPath || '')}`;
-            const res = await fetch(url);
-            const data = await res.json();
+            const teamPaths = npcTeamPathsFor(availableNPCs);
+            const bareNpcName = npcSelectionToName(availableNPCs, npcName) || npcName;
+            const npc = resolveNpcBySelection(availableNPCs, npcName);
+            const data = await getNpcToolsCached(npc, bareNpcName, teamPaths, currentPath);
             if (data.error) {
                 console.error('[NPC Tools] Error:', data.error);
             } else {
@@ -1861,7 +1865,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                         error={npcsError}
                         broadcastMode={broadcastMode}
                         onToggleBroadcast={() => setBroadcastMode(!broadcastMode)}
-                        onOpen={() => setShowJinxDropdown(false)}
+                        onOpen={() => { if (showJinxDropdown) setShowJinxDropdown(false); }}
                         placeholder="Agent"
                         className="w-1/3"
                     />

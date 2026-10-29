@@ -476,6 +476,71 @@ export const handleBrowserAiAction = (
     setBrowserContextMenu({ isOpen: false, x: 0, y: 0, selectedText: '', viewId: null });
 };
 
+export const npcValueFor = (teamPath: string, npcName: string) => `${teamPath}/${npcName}`;
+
+export const resolveNpcBySelection = (npcs: any[], selection: string | null | undefined) => {
+    if (!selection) return null;
+    return npcs.find((n: any) => n.value === selection) || npcs.find((n: any) => n.name === selection) || null;
+};
+
+export const npcBareName = (selection: string | null | undefined) =>
+    (selection || '').replace(/^(project:|global:)/, '').split('/').pop() || null;
+
+export const npcSelectionToName = (npcs: any[], selection: string | null | undefined) => {
+    const resolved = resolveNpcBySelection(npcs, selection);
+    if (resolved?.name) return resolved.name;
+    return npcBareName(selection);
+};
+
+const npcToolsDataCache = new Map<string, { mtimeMs: number | null; data: any }>();
+const npcToolsInflight = new Map<string, Promise<any>>();
+
+export const npcTeamPathsFor = (npcs: any[]) =>
+    [...new Set((npcs || []).map((n: any) => n.teamPath).filter(Boolean))] as string[];
+
+export const getNpcFileMtime = async (npc: any): Promise<number | null> => {
+    if (!npc?.source_path) return null;
+    try {
+        const stats = await (window as any).api?.getFileStats?.(npc.source_path);
+        return stats?.mtimeMs ?? null;
+    } catch {
+        return null;
+    }
+};
+
+export const getNpcToolsCached = async (
+    npc: any,
+    bareName: string,
+    teamPaths: string[],
+    currentPath: string | null
+): Promise<any> => {
+    const key = npc?.value || bareName;
+    if (!key) return { npc_tools: [] };
+    const inflight = npcToolsInflight.get(key);
+    if (inflight) return inflight;
+    const promise = (async () => {
+        const mtimeMs = await getNpcFileMtime(npc);
+        const cached = npcToolsDataCache.get(key);
+        if (cached && cached.mtimeMs === mtimeMs) return cached.data;
+        const url = `${BACKEND_URL}/api/npc_tools?npc=${encodeURIComponent(bareName)}&registered_teams=${encodeURIComponent(teamPaths.join(','))}&currentPath=${encodeURIComponent(currentPath || '')}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!data?.error) npcToolsDataCache.set(key, { mtimeMs, data });
+        return data;
+    })().finally(() => { npcToolsInflight.delete(key); });
+    npcToolsInflight.set(key, promise);
+    return promise;
+};
+
+export const preloadNpcTools = (npcs: any[], currentPath: string | null) => {
+    const teamPaths = npcTeamPathsFor(npcs);
+    for (const npc of npcs || []) {
+        const bareName = npc?.name;
+        if (!bareName) continue;
+        getNpcToolsCached(npc, bareName, teamPaths, currentPath).catch(() => {});
+    }
+};
+
 export const loadAvailableNPCs = async (
     currentPath: string | null,
     setNpcsLoading: (loading: boolean) => void,
@@ -522,7 +587,7 @@ export const loadAvailableNPCs = async (
             npcs.forEach((npc: any) => {
                 combinedNPCs.push({
                     ...npc,
-                    value: npc.name,
+                    value: npcValueFor(teamPaths[teamKey] || '', npc.name),
                     display_name: `${npc.name} | ${teamKey === 'project' ? 'Project' : (npc.team_name || teamKey)}`,
                     source: teamKey === 'project' ? 'project' : 'global',
                     team: teamKey,
@@ -1073,7 +1138,6 @@ export const usePaneAwareStreamListeners = (
     onPermissionRequestRef.current = onPermissionRequest;
 
     return useEffect(() => {
-        console.log('[STREAM_LISTENER] Effect run. config?.stream:', !!config?.stream, 'listenersAttached:', listenersAttached.current);
         if (!config?.stream || listenersAttached.current) {
             return;
         }
@@ -1110,7 +1174,6 @@ export const usePaneAwareStreamListeners = (
         const activeAssistantByStream: Record<string, any> = {};
 
         const handleStreamData = (_: any, { streamId: incomingStreamId, chunk }: any) => {
-            console.log('[STREAM_LISTENER] handleStreamData:', incomingStreamId, 'chunk type:', typeof chunk, 'targetPaneId:', streamToPaneRef.current[incomingStreamId]);
             const targetPaneId = streamToPaneRef.current[incomingStreamId];
             if (!targetPaneId) {
                 console.log('[STREAM_LISTENER] No targetPaneId for stream', incomingStreamId);
@@ -1325,7 +1388,6 @@ export const usePaneAwareStreamListeners = (
                                     if (result.content) appendText(result.content);
                                     if (result.reasoningContent) appendReasoning(result.reasoningContent);
                                     if (result.toolCalls) {
-                                        console.log('[STREAM_LISTENER] Appending tool calls:', result.toolCalls.length);
                                         appendToolCalls(result.toolCalls);
                                     }
                                     if (result.isDecision) currentMsg.role = 'decision';
@@ -1527,7 +1589,6 @@ export const usePaneAwareStreamListeners = (
         }, 30000);
 
         listenersAttached.current = true;
-        console.log('[STREAM_LISTENER] Listeners attached');
 
         return () => {
             cleanupStreamData();

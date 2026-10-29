@@ -1,4 +1,4 @@
-import React, { memo, useState, useRef } from 'react';
+import React, { memo, useState, useRef, useMemo, useCallback } from 'react';
 import { BACKEND_URL } from '../config';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AgentPromptCard } from './AgentPrompt';
@@ -82,6 +82,7 @@ export const ChatMessage = memo(({
     conversationId,
     onOpenFile,
     isAgentMode,
+    paneNodeId,
 }: {
     message: any;
     handleMessageContextMenu?: (e: React.MouseEvent, msg: any, idx: number) => void;
@@ -93,14 +94,15 @@ export const ChatMessage = memo(({
     onLabelMessage?: (msg: any) => void;
     messageLabel?: MessageLabel;
     conversationId?: string;
-    onOpenFile?: (path: string) => void;
+    onOpenFile?: (path: string, nodeId?: string) => void;
     isAgentMode?: boolean;
+    paneNodeId?: string;
 }) => {
     const showStreamingIndicators = !!message.isStreaming;
     const messageId = message.id || message.timestamp;
-    console.log(`[ChatMessage] render messageId=${messageId} role=${message.role} parent_message_id=${message.parent_message_id} contentLen=${(message.content || '').length}`);
 
-    const { body: displayBody, contextBlocks } = parseMessageContent(message.content || '');
+    const { body: displayBody, contextBlocks } = useMemo(() => parseMessageContent(message.content || ''), [message.content]);
+    const openFileHere = useCallback((path: string) => onOpenFile?.(path, paneNodeId), [onOpenFile, paneNodeId]);
     const hasContextBlocks = contextBlocks.length > 0;
     const isLongMessage = message.role === 'user' && countLines(displayBody) > MAX_COLLAPSED_LINES;
     const [isExpanded, setIsExpanded] = useState(false);
@@ -337,7 +339,7 @@ export const ChatMessage = memo(({
                             return m;
                         })()}
                         renderMarkdown={(content: string) => (
-                            <MarkdownRenderer content={searchTerm ? highlightSearchTerm(content, searchTerm) : content} onOpenFile={onOpenFile} />
+                            <MarkdownRenderer content={searchTerm ? highlightSearchTerm(content, searchTerm) : content} onOpenFile={openFileHere} />
                         )}
                         renderToolCall={(tool: any, idx: number) => <ToolCallDisplay key={idx} tool={tool.call || tool} />}
                         renderAttachments={(attachments: any[]) => (
@@ -351,7 +353,7 @@ export const ChatMessage = memo(({
                                         <div
                                             key={idx}
                                             className={`text-xs theme-bg-tertiary rounded px-2 py-1 flex items-center gap-1 ${isClickable ? 'cursor-pointer hover:bg-blue-500/20' : ''}`}
-                                            onDoubleClick={() => isClickable && onOpenFile?.(attachment.path)}
+                                            onDoubleClick={() => isClickable && openFileHere(attachment.path)}
                                             title={isClickable ? `Double-click to open: ${attachment.path}` : attachment.name}
                                         >
                                             <Paperclip size={12} className="flex-shrink-0" />

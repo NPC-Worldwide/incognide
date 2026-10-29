@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import PaneHeader from './PaneHeader';
 import PaneTabBar from './PaneTabBar';
-import { getFileName, getFileIcon } from './utils';
+import { getFileName, getFileIcon, npcBareName } from './utils';
 import ChatInput from './ChatInput';
 import AgentInput from './AgentInput';
 import DiffViewer from './DiffViewer';
@@ -337,10 +337,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             if (!emitter) return;
             const handler = (e: any) => {
                 if (e.detail?.paneId === node.id || e.detail?.paneId === 'all') {
-                    const start = performance.now();
-                    console.log(`[LayoutNode] pane-update received for ${node.id} source=${e.detail?.paneId}`);
                     forceRender(n => n + 1);
-                    console.log(`[LayoutNode] pane ${node.id} forceRender took`, (performance.now() - start).toFixed(2), 'ms');
                 }
             };
             emitter.addEventListener('pane-update', handler);
@@ -1462,10 +1459,10 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             const agentsFromStats = chatStats?.agents instanceof Set
                 ? Array.from(chatStats.agents)
                 : (Array.isArray(chatStats?.agents) ? chatStats.agents : []);
-            const npcName = paneData?.npc
+            const npcName = npcBareName(paneData?.npc)
                 || lastAssistant?.npc
                 || (agentsFromStats.length > 0 ? String(agentsFromStats[0]) : null)
-                || (activeContentPaneId === node.id ? currentNPC : null);
+                || (activeContentPaneId === node.id ? npcBareName(currentNPC) : null);
             const computedTitle = npcName
                 ? `${npcName}${shortId ? ` ${shortId}` : ''}`
                 : shortId || (contentType === 'agent' ? 'Agent' : 'Chat');

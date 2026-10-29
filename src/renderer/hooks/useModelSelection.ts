@@ -64,7 +64,14 @@ export function useModelSelection() {
 
     const currentNpcObject = useMemo(() => {
         if (!currentNPC || availableNPCs.length === 0) return null;
-        return availableNPCs.find((n: any) => n.name === currentNPC || n.value === currentNPC) || null;
+        return availableNPCs.find((n: any) => n.value === currentNPC || n.name === currentNPC) || null;
+    }, [currentNPC, availableNPCs]);
+
+    useEffect(() => {
+        if (!currentNPC || availableNPCs.length === 0) return;
+        if (availableNPCs.some((n: any) => n.value === currentNPC)) return;
+        const matched = availableNPCs.find((n: any) => n.name === currentNPC);
+        if (matched) setCurrentNPC(matched.value);
     }, [currentNPC, availableNPCs]);
 
     const npcScopedModels = useMemo(() => {
@@ -184,7 +191,15 @@ export function useModelSelection() {
     }, [ctxProviders, fetchedProviderModels, providerModelContext]);
 
     const effectiveAvailableModels = useMemo(() => {
-        return availableModelsFromTeamCtx.length > 0 ? availableModelsFromTeamCtx : npcScopedModels;
+        const combined: any[] = [];
+        const seen = new Set<string>();
+        for (const m of [...npcScopedModels, ...availableModelsFromTeamCtx]) {
+            const key = `${m.provider}::${m.value}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            combined.push(m);
+        }
+        return combined;
     }, [availableModelsFromTeamCtx, npcScopedModels]);
 
     useEffect(() => {
