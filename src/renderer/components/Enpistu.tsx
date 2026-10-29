@@ -4714,7 +4714,7 @@ const handleBrowserDialogNavigate = (url) => {
             });
 
             const selectedNpc = resolveNpcBySelection(availableNPCs, queueItem.currentNPC);
-            const npcName = selectedNpc?.name || queueItem.currentNPC?.replace(/^(project:|global:)/, '') || 'agent';
+            const npcName = selectedNpc?.name || npcSelectionToName(availableNPCs, queueItem.currentNPC) || 'agent';
             const npcSource = selectedNpc?.source || 'global';
 
             const currentPanes = rootLayoutNode ? collectPaneInfo(rootLayoutNode, contentDataRef.current, activeContentPaneId) : [];

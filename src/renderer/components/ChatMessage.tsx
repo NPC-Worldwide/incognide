@@ -1,4 +1,4 @@
-import React, { memo, useState, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { BACKEND_URL } from '../config';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AgentPromptCard } from './AgentPrompt';
@@ -69,7 +69,7 @@ const countLines = (content: string): number => {
 
 const MAX_COLLAPSED_LINES = 4;
 
-export const ChatMessage = memo(({
+export const ChatMessage = ({
     message,
     handleMessageContextMenu,
     searchTerm,
@@ -321,6 +321,7 @@ export const ChatMessage = memo(({
                             const m = { ...message, content: displayBody, isStreaming: showStreamingIndicators } as ChatMessageData;
                             const hasToolCallParts = m.contentParts?.some((p: any) => p?.type === 'tool_call');
                             const hasReasoningParts = m.contentParts?.some((p: any) => p?.type === 'reasoning');
+                            const hasTextParts = m.contentParts?.some((p: any) => p?.type === 'text');
                             if (hasToolCallParts) {
                                 m.toolCalls = undefined;
                             } else if (m.toolCalls?.length > 0) {
@@ -335,6 +336,13 @@ export const ChatMessage = memo(({
                                     { type: 'reasoning', content: m.reasoningContent },
                                     ...(m.contentParts || [])
                                 ];
+                            }
+                            if (displayBody && !hasTextParts) {
+                                const parts = [...(m.contentParts || [])];
+                                const at = parts.findIndex((p: any) => p?.type !== 'reasoning');
+                                if (at < 0) parts.push({ type: 'text', content: displayBody });
+                                else parts.splice(at, 0, { type: 'text', content: displayBody });
+                                m.contentParts = parts;
                             }
                             return m;
                         })()}
@@ -476,4 +484,4 @@ export const ChatMessage = memo(({
             </div>
         </div>
     );
-});
+};

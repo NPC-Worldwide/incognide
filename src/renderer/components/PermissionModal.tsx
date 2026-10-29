@@ -28,7 +28,7 @@ export function PermissionModal({ request, pendingCount, onDecision, isActivePan
     const modalRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        modalRef.current?.focus();
+        modalRef.current?.focus({ preventScroll: true });
     }, [request.request_id]);
 
     useEffect(() => {
@@ -52,7 +52,7 @@ export function PermissionModal({ request, pendingCount, onDecision, isActivePan
         <div
             ref={modalRef}
             tabIndex={-1}
-            className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 p-4 outline-none"
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 outline-none"
         >
             <div className="theme-bg-secondary p-6 theme-border border rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
                 <h3 className="text-lg font-medium mb-1 theme-text-primary">Permission Request</h3>
