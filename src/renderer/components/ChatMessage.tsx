@@ -1,4 +1,4 @@
-import React, { memo, useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { BACKEND_URL } from '../config';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AgentPromptCard } from './AgentPrompt';
@@ -69,7 +69,7 @@ const countLines = (content: string): number => {
 
 const MAX_COLLAPSED_LINES = 4;
 
-export const ChatMessage = memo(({
+export const ChatMessage = ({
     message,
     handleMessageContextMenu,
     searchTerm,
@@ -82,6 +82,7 @@ export const ChatMessage = memo(({
     conversationId,
     onOpenFile,
     isAgentMode,
+    paneNodeId,
 }: {
     message: any;
     handleMessageContextMenu?: (e: React.MouseEvent, msg: any, idx: number) => void;
@@ -93,14 +94,15 @@ export const ChatMessage = memo(({
     onLabelMessage?: (msg: any) => void;
     messageLabel?: MessageLabel;
     conversationId?: string;
-    onOpenFile?: (path: string) => void;
+    onOpenFile?: (path: string, nodeId?: string) => void;
     isAgentMode?: boolean;
+    paneNodeId?: string;
 }) => {
     const showStreamingIndicators = !!message.isStreaming;
     const messageId = message.id || message.timestamp;
-    console.log(`[ChatMessage] render messageId=${messageId} role=${message.role} parent_message_id=${message.parent_message_id} contentLen=${(message.content || '').length}`);
 
-    const { body: displayBody, contextBlocks } = parseMessageContent(message.content || '');
+    const { body: displayBody, contextBlocks } = useMemo(() => parseMessageContent(message.content || ''), [message.content]);
+    const openFileHere = useCallback((path: string) => onOpenFile?.(path, paneNodeId), [onOpenFile, paneNodeId]);
     const hasContextBlocks = contextBlocks.length > 0;
     const isLongMessage = message.role === 'user' && countLines(displayBody) > MAX_COLLAPSED_LINES;
     const [isExpanded, setIsExpanded] = useState(false);
@@ -319,6 +321,7 @@ export const ChatMessage = memo(({
                             const m = { ...message, content: displayBody, isStreaming: showStreamingIndicators } as ChatMessageData;
                             const hasToolCallParts = m.contentParts?.some((p: any) => p?.type === 'tool_call');
                             const hasReasoningParts = m.contentParts?.some((p: any) => p?.type === 'reasoning');
+                            const hasTextParts = m.contentParts?.some((p: any) => p?.type === 'text');
                             if (hasToolCallParts) {
                                 m.toolCalls = undefined;
                             } else if (m.toolCalls?.length > 0) {
@@ -334,10 +337,17 @@ export const ChatMessage = memo(({
                                     ...(m.contentParts || [])
                                 ];
                             }
+                            if (displayBody && !hasTextParts) {
+                                const parts = [...(m.contentParts || [])];
+                                const at = parts.findIndex((p: any) => p?.type !== 'reasoning');
+                                if (at < 0) parts.push({ type: 'text', content: displayBody });
+                                else parts.splice(at, 0, { type: 'text', content: displayBody });
+                                m.contentParts = parts;
+                            }
                             return m;
                         })()}
                         renderMarkdown={(content: string) => (
-                            <MarkdownRenderer content={searchTerm ? highlightSearchTerm(content, searchTerm) : content} onOpenFile={onOpenFile} />
+                            <MarkdownRenderer content={searchTerm ? highlightSearchTerm(content, searchTerm) : content} onOpenFile={openFileHere} />
                         )}
                         renderToolCall={(tool: any, idx: number) => <ToolCallDisplay key={idx} tool={tool.call || tool} />}
                         renderAttachments={(attachments: any[]) => (
@@ -351,7 +361,7 @@ export const ChatMessage = memo(({
                                         <div
                                             key={idx}
                                             className={`text-xs theme-bg-tertiary rounded px-2 py-1 flex items-center gap-1 ${isClickable ? 'cursor-pointer hover:bg-blue-500/20' : ''}`}
-                                            onDoubleClick={() => isClickable && onOpenFile?.(attachment.path)}
+                                            onDoubleClick={() => isClickable && openFileHere(attachment.path)}
                                             title={isClickable ? `Double-click to open: ${attachment.path}` : attachment.name}
                                         >
                                             <Paperclip size={12} className="flex-shrink-0" />
@@ -474,4 +484,4 @@ export const ChatMessage = memo(({
             </div>
         </div>
     );
-});
+};

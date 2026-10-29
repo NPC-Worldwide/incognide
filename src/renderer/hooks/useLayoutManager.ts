@@ -97,7 +97,6 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
     useEffect(() => {
         if (!paneUpdateEmitter) return;
         const handler = (e: any) => {
-            console.log(`[useLayoutManager] pane-update received source=${e.detail?.paneId} current contentVersion will bump`);
             setContentVersion(v => v + 1);
         };
         paneUpdateEmitter.addEventListener('pane-update', handler);

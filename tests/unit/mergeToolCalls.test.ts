@@ -169,4 +169,17 @@ describe('mergeToolCalls', () => {
     expect(merged[0].id).toBe('call_abc');
     expect(merged[0].internalId).toBe(firstInternalId);
   });
+
+  it('replaces args on a semantically identical resend with different formatting', () => {
+    let merged: StreamingToolCall[] = [];
+    merged = mergeToolCalls(merged, [
+      { id: 'c1', function: { name: 'read', arguments: '{"bash_command":"ls"}' }, status: 'running' }
+    ]);
+    merged = mergeToolCalls(merged, [
+      { id: 'c1', function: { name: 'read', arguments: '{\n  "bash_command": "ls"\n}' }, status: 'running' }
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].function?.arguments).toBe('{\n  "bash_command": "ls"\n}');
+  });
 });

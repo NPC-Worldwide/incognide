@@ -60,6 +60,14 @@ function normalizeStreamingToolCall(tc: any): StreamingToolCall {
 }
 
 export function mergeToolCalls(existing: StreamingToolCall[], incoming: StreamingToolCall[]): StreamingToolCall[] {
+    const argsMatch = (a: string, b: string) => {
+        if (a === b) return true;
+        try {
+            return JSON.stringify(JSON.parse(a)) === JSON.stringify(JSON.parse(b));
+        } catch {
+            return false;
+        }
+    };
     const merged: StreamingToolCall[] = existing.map((tc) => ({ ...tc }));
 
     for (const raw of incoming) {
@@ -129,7 +137,7 @@ export function mergeToolCalls(existing: StreamingToolCall[], incoming: Streamin
             // matches, replace if the new args look like a complete resend (new starts
             // with existing); otherwise accumulate as an incremental chunk.
             const matchedByIndex = typeof tc.index === 'number' && tc.index >= 0;
-            const isCompleteResend = !matchedByIndex && existingArgs && newArgs.startsWith(existingArgs);
+            const isCompleteResend = !matchedByIndex && existingArgs && (newArgs.startsWith(existingArgs) || argsMatch(existingArgs, newArgs));
             const argumentsValue = matchedByIndex
                 ? existingArgs + newArgs
                 : isCompleteResend
@@ -158,6 +166,14 @@ export function mergeToolCalls(existing: StreamingToolCall[], incoming: Streamin
 
     return merged;
 }
+
+export const refreshMessageIdentity = (allMessages: any[], msg: any) => {
+    const idx = allMessages.indexOf(msg);
+    if (idx < 0) return msg;
+    const next = { ...msg };
+    allMessages[idx] = next;
+    return next;
+};
 
 export const loadTeamCtxFromPath = async (teamPath: string): Promise<any> => {
     try {
@@ -476,6 +492,71 @@ export const handleBrowserAiAction = (
     setBrowserContextMenu({ isOpen: false, x: 0, y: 0, selectedText: '', viewId: null });
 };
 
+export const npcValueFor = (teamPath: string, npcName: string) => `${teamPath}/${npcName}`;
+
+export const resolveNpcBySelection = (npcs: any[], selection: string | null | undefined) => {
+    if (!selection) return null;
+    return npcs.find((n: any) => n.value === selection) || npcs.find((n: any) => n.name === selection) || null;
+};
+
+export const npcBareName = (selection: string | null | undefined) =>
+    (selection || '').replace(/^(project:|global:)/, '').split('/').pop() || null;
+
+export const npcSelectionToName = (npcs: any[], selection: string | null | undefined) => {
+    const resolved = resolveNpcBySelection(npcs, selection);
+    if (resolved?.name) return resolved.name;
+    return npcBareName(selection);
+};
+
+const npcToolsDataCache = new Map<string, { mtimeMs: number | null; data: any }>();
+const npcToolsInflight = new Map<string, Promise<any>>();
+
+export const npcTeamPathsFor = (npcs: any[]) =>
+    [...new Set((npcs || []).map((n: any) => n.teamPath).filter(Boolean))] as string[];
+
+export const getNpcFileMtime = async (npc: any): Promise<number | null> => {
+    if (!npc?.source_path) return null;
+    try {
+        const stats = await (window as any).api?.getFileStats?.(npc.source_path);
+        return stats?.mtimeMs ?? null;
+    } catch {
+        return null;
+    }
+};
+
+export const getNpcToolsCached = async (
+    npc: any,
+    bareName: string,
+    teamPaths: string[],
+    currentPath: string | null
+): Promise<any> => {
+    const key = npc?.value || bareName;
+    if (!key) return { npc_tools: [] };
+    const inflight = npcToolsInflight.get(key);
+    if (inflight) return inflight;
+    const promise = (async () => {
+        const mtimeMs = await getNpcFileMtime(npc);
+        const cached = npcToolsDataCache.get(key);
+        if (cached && cached.mtimeMs === mtimeMs) return cached.data;
+        const url = `${BACKEND_URL}/api/npc_tools?npc=${encodeURIComponent(bareName)}&registered_teams=${encodeURIComponent(teamPaths.join(','))}&currentPath=${encodeURIComponent(currentPath || '')}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!data?.error) npcToolsDataCache.set(key, { mtimeMs, data });
+        return data;
+    })().finally(() => { npcToolsInflight.delete(key); });
+    npcToolsInflight.set(key, promise);
+    return promise;
+};
+
+export const preloadNpcTools = (npcs: any[], currentPath: string | null) => {
+    const teamPaths = npcTeamPathsFor(npcs);
+    for (const npc of npcs || []) {
+        const bareName = npc?.name;
+        if (!bareName) continue;
+        getNpcToolsCached(npc, bareName, teamPaths, currentPath).catch(() => {});
+    }
+};
+
 export const loadAvailableNPCs = async (
     currentPath: string | null,
     setNpcsLoading: (loading: boolean) => void,
@@ -522,7 +603,7 @@ export const loadAvailableNPCs = async (
             npcs.forEach((npc: any) => {
                 combinedNPCs.push({
                     ...npc,
-                    value: npc.name,
+                    value: npcValueFor(teamPaths[teamKey] || '', npc.name),
                     display_name: `${npc.name} | ${teamKey === 'project' ? 'Project' : (npc.team_name || teamKey)}`,
                     source: teamKey === 'project' ? 'project' : 'global',
                     team: teamKey,
@@ -1073,7 +1154,6 @@ export const usePaneAwareStreamListeners = (
     onPermissionRequestRef.current = onPermissionRequest;
 
     return useEffect(() => {
-        console.log('[STREAM_LISTENER] Effect run. config?.stream:', !!config?.stream, 'listenersAttached:', listenersAttached.current);
         if (!config?.stream || listenersAttached.current) {
             return;
         }
@@ -1108,9 +1188,9 @@ export const usePaneAwareStreamListeners = (
         };
 
         const activeAssistantByStream: Record<string, any> = {};
+        const studioExecutedIds = new Set<string>();
 
         const handleStreamData = (_: any, { streamId: incomingStreamId, chunk }: any) => {
-            console.log('[STREAM_LISTENER] handleStreamData:', incomingStreamId, 'chunk type:', typeof chunk, 'targetPaneId:', streamToPaneRef.current[incomingStreamId]);
             const targetPaneId = streamToPaneRef.current[incomingStreamId];
             if (!targetPaneId) {
                 console.log('[STREAM_LISTENER] No targetPaneId for stream', incomingStreamId);
@@ -1195,6 +1275,8 @@ export const usePaneAwareStreamListeners = (
                 };
 
                 const rotateAssistantMessage = () => {
+                    currentMsg.isStreaming = false;
+                    refreshMessageIdentity(paneData.chatMessages.allMessages, currentMsg);
                     const nextId = generateId();
                     const nextMsg = {
                         id: nextId,
@@ -1220,6 +1302,9 @@ export const usePaneAwareStreamListeners = (
 
                 const appendText = (text: string) => {
                     if (!text) return;
+                    if (currentMsg.toolCalls?.some((c: any) => c.status === 'complete' || c.status === 'error')) {
+                        rotateAssistantMessage();
+                    }
                     currentMsg.content = (currentMsg.content || '') + text;
                     const lastPart = currentMsg.contentParts[currentMsg.contentParts.length - 1];
                     if (lastPart && lastPart.type === 'text') {
@@ -1249,44 +1334,69 @@ export const usePaneAwareStreamListeners = (
                     }
                 };
 
+                const finishStudioCall = (internalId: string, status: string, preview: string) => {
+                    const liveMsg = paneData.chatMessages.allMessages.find((m: any) =>
+                        m.toolCalls?.some((c: any) => c.internalId === internalId));
+                    if (!liveMsg) return;
+                    const liveCall = liveMsg.toolCalls.find((c: any) => c.internalId === internalId);
+                    if (!liveCall || liveCall.status === 'complete' || liveCall.status === 'error') return;
+                    liveCall.status = status;
+                    liveCall.result_preview = preview;
+                    const next = refreshMessageIdentity(paneData.chatMessages.allMessages, liveMsg);
+                    paneData.chatMessages.messages = visibleMessageSlice(paneData.chatMessages.allMessages, paneData.chatMessages.displayedMessageCount || 20);
+                    saveAssistantMessage(paneData, next);
+                    notifyPaneUpdate(targetPaneId);
+                };
+
                 const appendToolCalls = (calls: any[]) => {
                     if (!calls || calls.length === 0) return;
                     const normalizedCalls = calls.map(normalizeStreamingToolCall);
 
-                    const currentStudioContext = studioContextRef.current;
-                    if (currentStudioContext) {
-                        for (const tc of normalizedCalls) {
-                            const funcName = tc.function?.name || '';
-                            if (funcName.startsWith('studio.')) {
-                                const actionName = funcName.slice(7);
-                                let args = {};
-                                try {
-                                    args = JSON.parse(tc.function?.arguments || '{}');
-                                } catch (e) {
-                                    console.warn('[STUDIO] Failed to parse arguments:', tc.function?.arguments);
-                                }
-
-                                (async () => {
-                                    try {
-                                        const result = await executeStudioAction(actionName, args, currentStudioContext);
-                                        tc.status = result.success ? 'complete' : 'error';
-                                        tc.result_preview = JSON.stringify(result, null, 2);
-                                        notifyPaneUpdate(targetPaneId);
-                                    } catch (err) {
-                                        console.error(`[STUDIO] Action ${actionName} failed:`, err);
-                                        tc.status = 'error';
-                                        tc.result_preview = `Error: ${err}`;
-                                        notifyPaneUpdate(targetPaneId);
-                                    }
-                                })();
-                            }
-                        }
-                    }
-
                     const merged = mergeToolCalls(currentMsg.toolCalls || [], normalizedCalls);
                     currentMsg.toolCalls = merged;
-                    const nonToolParts = currentMsg.contentParts.filter((p: any) => p.type !== 'tool_call');
-                    currentMsg.contentParts = [...nonToolParts, ...merged.map((tc: any) => ({ type: 'tool_call', call: tc }))];
+                    const callKey = (c: any) => c?.internalId || c?.id || '';
+                    const seenKeys = new Set(currentMsg.contentParts
+                        .filter((p: any) => p?.type === 'tool_call')
+                        .map((p: any) => callKey(p.call)));
+                    const nextParts = currentMsg.contentParts.map((p: any) => {
+                        if (p?.type !== 'tool_call') return p;
+                        const updated = merged.find((tc: any) => tc.internalId && tc.internalId === p.call?.internalId)
+                            || merged.find((tc: any) => callKey(tc) !== '' && callKey(tc) === callKey(p.call));
+                        return updated ? { type: 'tool_call', call: updated } : p;
+                    });
+                    for (const tc of merged) {
+                        if (callKey(tc) === '' || seenKeys.has(callKey(tc))) continue;
+                        nextParts.push({ type: 'tool_call', call: tc });
+                    }
+                    currentMsg.contentParts = nextParts;
+
+                    const currentStudioContext = studioContextRef.current;
+                    if (currentStudioContext) {
+                        for (const tc of merged) {
+                            const funcName = tc.function?.name || '';
+                            if (!funcName.startsWith('studio.')) continue;
+                            if (!tc.internalId || studioExecutedIds.has(tc.internalId)) continue;
+                            studioExecutedIds.add(tc.internalId);
+                            const actionName = funcName.slice(7);
+                            let args = {};
+                            try {
+                                args = JSON.parse(tc.function?.arguments || '{}');
+                            } catch (e) {
+                                console.warn('[STUDIO] Failed to parse arguments:', tc.function?.arguments);
+                            }
+
+                            const internalId = tc.internalId;
+                            (async () => {
+                                try {
+                                    const result = await executeStudioAction(actionName, args, currentStudioContext);
+                                    finishStudioCall(internalId, result.success ? 'complete' : 'error', JSON.stringify(result, null, 2));
+                                } catch (err) {
+                                    console.error(`[STUDIO] Action ${actionName} failed:`, err);
+                                    finishStudioCall(internalId, 'error', `Error: ${err}`);
+                                }
+                            })();
+                        }
+                    }
                     if (currentMsg.role === 'assistant' && currentMsg.isStreaming) {
                         saveAssistantMessage(paneData, currentMsg);
                     }
@@ -1325,7 +1435,6 @@ export const usePaneAwareStreamListeners = (
                                     if (result.content) appendText(result.content);
                                     if (result.reasoningContent) appendReasoning(result.reasoningContent);
                                     if (result.toolCalls) {
-                                        console.log('[STREAM_LISTENER] Appending tool calls:', result.toolCalls.length);
                                         appendToolCalls(result.toolCalls);
                                     }
                                     if (result.isDecision) currentMsg.role = 'decision';
@@ -1376,6 +1485,8 @@ export const usePaneAwareStreamListeners = (
                     }
                 }
 
+                currentMsg = refreshMessageIdentity(paneData.chatMessages.allMessages, currentMsg);
+                activeAssistantByStream[incomingStreamId] = currentMsg;
                 paneData.chatMessages.messages = visibleMessageSlice(paneData.chatMessages.allMessages, paneData.chatMessages.displayedMessageCount || 20);
                 notifyPaneUpdate(targetPaneId);
                 if (currentMsg.role === 'assistant' && currentMsg.isStreaming && !currentMsg.content) {
@@ -1393,19 +1504,21 @@ export const usePaneAwareStreamListeners = (
                 if (paneData?.chatMessages) {
                     const streamMessages = paneData.chatMessages.allMessages.filter((m: any) => m.streamId === completedStreamId);
                     if (streamMessages.length > 0) {
-                        const lastMsg = streamMessages[streamMessages.length - 1];
-                        for (const m of streamMessages) {
+                        for (let i = 0; i < streamMessages.length; i++) {
+                            const m = streamMessages[i];
                             m.isStreaming = false;
                             m.streamId = null;
                             markToolCallsInterrupted(m, 'Stream ended before tool reported a result');
+                            streamMessages[i] = refreshMessageIdentity(paneData.chatMessages.allMessages, m);
                         }
+                        const fullContent = streamMessages.map((m: any) => m.content || '').join('');
 
                         const recentUserMsgs = paneData.chatMessages.allMessages.filter((m: any) => m.role === 'user').slice(-3);
                         const wasAgentMode = recentUserMsgs.some((m: any) => m.executionMode === 'tool_agent');
 
                         if (wasAgentMode) {
                             const contexts = gatherWorkspaceContext(contentDataRef).filter((c: any) => c.type === 'file');
-                            const proposedChanges = parseAgenticResponse(lastMsg.content, contexts);
+                            const proposedChanges = parseAgenticResponse(fullContent, contexts);
 
                             if (proposedChanges.length > 0) {
                                 setAiEditModal({
@@ -1425,8 +1538,8 @@ export const usePaneAwareStreamListeners = (
                         }
 
                         const wasVoiceInput = recentUserMsgs.length > 0 && recentUserMsgs[recentUserMsgs.length - 1]?.wasVoiceInput;
-                        if (wasVoiceInput && lastMsg.content) {
-                            triggerAutoTTS(lastMsg.content);
+                        if (wasVoiceInput && fullContent) {
+                            triggerAutoTTS(fullContent);
                         }
 
                         for (const m of streamMessages) {
@@ -1463,11 +1576,13 @@ export const usePaneAwareStreamListeners = (
                         const lastMsg = streamMessages[streamMessages.length - 1];
                         lastMsg.content += `\n\n[STREAM ERROR: ${error}]`;
                         lastMsg.type = 'error';
-                        for (const message of streamMessages) {
+                        for (let i = 0; i < streamMessages.length; i++) {
+                            const message = streamMessages[i];
                             message.isStreaming = false;
                             message.streamId = null;
                             markToolCallsInterrupted(message, `Stream error: ${error}`);
-                            saveAssistantMessage(paneData, message);
+                            streamMessages[i] = refreshMessageIdentity(paneData.chatMessages.allMessages, message);
+                            saveAssistantMessage(paneData, streamMessages[i]);
                         }
                     }
                 }
@@ -1511,11 +1626,13 @@ export const usePaneAwareStreamListeners = (
 
                 if (elapsed > 300000) {
                     console.warn(`[STREAM] Stale stream detected: ${streamId} (${Math.round(elapsed/1000)}s). Marking as complete.`);
-                    for (const msg of streamMessages) {
+                    for (let i = 0; i < streamMessages.length; i++) {
+                        const msg = streamMessages[i];
                         msg.isStreaming = false;
                         msg.streamId = null;
                         markToolCallsInterrupted(msg, 'Stream went stale before tool reported a result');
-                        saveAssistantMessage(paneData, msg);
+                        streamMessages[i] = refreshMessageIdentity(paneData.chatMessages.allMessages, msg);
+                        saveAssistantMessage(paneData, streamMessages[i]);
                     }
                     delete streamToPaneRef.current[streamId];
                     if (Object.keys(streamToPaneRef.current).length === 0) {
@@ -1527,7 +1644,6 @@ export const usePaneAwareStreamListeners = (
         }, 30000);
 
         listenersAttached.current = true;
-        console.log('[STREAM_LISTENER] Listeners attached');
 
         return () => {
             cleanupStreamData();
@@ -1586,10 +1702,12 @@ export const handleInterruptStream = async (
     const paneData = contentDataRef.current[targetPaneId || ''];
     const clearPaneStreamingState = () => {
         if (!paneData?.chatMessages?.allMessages) return;
-        for (const msg of paneData.chatMessages.allMessages) {
+        const all = paneData.chatMessages.allMessages;
+        for (const msg of all) {
             if (msg.isStreaming) {
                 msg.isStreaming = false;
                 msg.streamId = null;
+                refreshMessageIdentity(all, msg);
             }
         }
     };
@@ -1667,6 +1785,7 @@ export const handleInterruptStream = async (
     streamingMessage.isStreaming = false;
     streamingMessage.streamId = null;
     markToolCallsInterrupted(streamingMessage, 'Interrupted by user');
+    let liveInterrupted = refreshMessageIdentity(paneData.chatMessages.allMessages, streamingMessage);
 
     // Persist the interrupted state so it survives pane reloads.
     (window as any).api.saveMessage({
@@ -1701,7 +1820,8 @@ export const handleInterruptStream = async (
         console.log(`[REACT] handleInterruptStream: API call to interrupt stream ${streamIdToInterrupt} successful.`);
     } catch (error) {
         console.error(`[REACT] handleInterruptStream: API call to interrupt stream ${streamIdToInterrupt} failed:`, error);
-        streamingMessage.content += " [Interruption API call failed]";
+        liveInterrupted.content += " [Interruption API call failed]";
+        liveInterrupted = refreshMessageIdentity(paneData.chatMessages.allMessages, liveInterrupted);
         if (targetPaneId) notifyPaneUpdate(targetPaneId);
     }
     clearPaneStreamingState();

@@ -1,4 +1,4 @@
-import { getFileName } from './utils';
+import { getFileName, resolveNpcBySelection } from './utils';
 import { visibleMessageSlice } from '../hooks/useLayoutManager';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAiEnabled } from './AiFeatureContext';
@@ -998,9 +998,9 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
         streamToPaneRef.current[newStreamId] = newPaneId;
         setIsStreaming(true);
 
-        const selectedNpc = availableNPCs.find(npc => npc.value === currentNPC);
+        const selectedNpc = resolveNpcBySelection(availableNPCs, currentNPC);
         const userMessage = { id: generateId(), role: 'user', content: fullPrompt, timestamp: new Date().toISOString() };
-        const assistantPlaceholderMessage = { id: newStreamId, role: 'assistant', content: '', isStreaming: true, timestamp: new Date().toISOString(), streamId: newStreamId, model: currentModel, npc: currentNPC };
+        const assistantPlaceholderMessage = { id: newStreamId, role: 'assistant', content: '', isStreaming: true, timestamp: new Date().toISOString(), streamId: newStreamId, model: currentModel, npc: selectedNpc?.name || currentNPC };
 
         paneData.chatMessages.allMessages.push(userMessage, assistantPlaceholderMessage);
         paneData.chatMessages.messages = visibleMessageSlice(paneData.chatMessages.allMessages, paneData.chatMessages.displayedMessageCount);
@@ -1153,9 +1153,9 @@ const handleSummarizeAndStart = async () => {
         streamToPaneRef.current[newStreamId] = newPaneId;
         setIsStreaming(true);
 
-        const selectedNpc = availableNPCs.find(npc => npc.value === currentNPC);
+        const selectedNpc = resolveNpcBySelection(availableNPCs, currentNPC);
         const userMessage = { id: generateId(), role: 'user', content: fullPrompt, timestamp: new Date().toISOString() };
-        const assistantPlaceholderMessage = { id: newStreamId, role: 'assistant', content: '', isStreaming: true, timestamp: new Date().toISOString(), streamId: newStreamId, model: currentModel, npc: currentNPC };
+        const assistantPlaceholderMessage = { id: newStreamId, role: 'assistant', content: '', isStreaming: true, timestamp: new Date().toISOString(), streamId: newStreamId, model: currentModel, npc: selectedNpc?.name || currentNPC };
 
         paneData.chatMessages.allMessages.push(userMessage, assistantPlaceholderMessage);
         paneData.chatMessages.messages = visibleMessageSlice(paneData.chatMessages.allMessages, paneData.chatMessages.displayedMessageCount);

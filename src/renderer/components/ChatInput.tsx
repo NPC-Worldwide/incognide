@@ -1,5 +1,5 @@
-import { getFileName } from './utils';
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { getFileName, npcSelectionToName, npcBareName, resolveNpcBySelection, npcTeamPathsFor, getNpcToolsCached } from './utils';
+import React, { useState, useRef, useEffect, useMemo, memo, startTransition } from 'react';
 import { BACKEND_URL } from '../config';
 import {
     Send, Paperclip, Maximize2, ChevronDown, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, Save, Trash2, Zap, X, RefreshCw,
@@ -131,6 +131,163 @@ interface ChatInputProps {
 
     onBroadcast?: (models: string[], npcs: string[], inputText?: string, files?: any[]) => void;
 }
+
+interface NpcsMenuProps {
+    availableNPCs: any[];
+    selectedNPCs: string[];
+    onChangeSelected: React.Dispatch<React.SetStateAction<string[]>>;
+    onSelectCurrent: (npc: string) => void;
+    loading?: boolean;
+    error?: any;
+    broadcastMode: boolean;
+    onToggleBroadcast: () => void;
+    onOpen?: () => void;
+}
+
+const NpcsMenu: React.FC<NpcsMenuProps> = memo(({
+    availableNPCs,
+    selectedNPCs,
+    onChangeSelected,
+    onSelectCurrent,
+    loading = false,
+    error = null,
+    broadcastMode,
+    onToggleBroadcast,
+    onOpen,
+}) => {
+    const [open, setOpen] = useState(false);
+    const [npcSearch, setNpcSearch] = useState('');
+    const [pos, setPos] = useState<{ bottom: number; left: number } | null>(null);
+    const [pendingValue, setPendingValue] = useState<string | null>(null);
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const searchRef = useRef<HTMLInputElement>(null);
+
+    const filteredNPCs = useMemo(() => {
+        if (!npcSearch.trim()) return availableNPCs;
+        const q = npcSearch.toLowerCase();
+        return availableNPCs.filter((n: any) =>
+            n.display_name?.toLowerCase().includes(q) || n.value?.toLowerCase().includes(q)
+        );
+    }, [availableNPCs, npcSearch]);
+
+    useEffect(() => { setPendingValue(null); }, [selectedNPCs]);
+
+    useEffect(() => {
+        if (!open) return;
+        setNpcSearch('');
+        setTimeout(() => searchRef.current?.focus(), 50);
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setOpen(false);
+        };
+        const onMouse = (e: MouseEvent) => {
+            if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('keydown', onKey);
+        document.addEventListener('mousedown', onMouse);
+        return () => {
+            document.removeEventListener('keydown', onKey);
+            document.removeEventListener('mousedown', onMouse);
+        };
+    }, [open]);
+
+    const valueLabel = (v: string) =>
+        (availableNPCs.find((n: any) => n.value === v)?.display_name || npcBareName(v) || '').split(' | ')[0];
+
+    const label = loading ? '...' : error ? 'Error' :
+        pendingValue ? valueLabel(pendingValue) :
+        selectedNPCs.length === 1 ? valueLabel(selectedNPCs[0]) :
+        selectedNPCs.length === 0 ? 'NPC' : 'NPCs';
+
+    return (
+        <div className="relative flex-1 min-w-0 w-1/3" ref={wrapperRef}>
+            <button
+                className={`w-full h-7 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 border px-2 ${
+                    selectedNPCs.length > 1
+                        ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-green-200 border-green-400/40'
+                        : 'theme-bg-secondary theme-text-secondary theme-border theme-hover'
+                }`}
+                disabled={loading || !!error}
+                onClick={() => {
+                    if (!open) {
+                        onOpen?.();
+                        const rect = wrapperRef.current?.getBoundingClientRect();
+                        if (rect) setPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left });
+                        setOpen(true);
+                    } else {
+                        setOpen(false);
+                    }
+                }}
+            >
+                {selectedNPCs.length > 1 && (
+                    <span className="w-4 h-4 rounded bg-green-500 text-white text-[9px] flex items-center justify-center font-bold flex-shrink-0">{selectedNPCs.length}</span>
+                )}
+                <span className="truncate">{label}</span>
+                <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {open && !loading && !error && pos && (
+                <div className="npc-agent-selector-dropdown pointer-events-auto fixed z-[100] theme-bg-primary theme-border border rounded-lg shadow-2xl overflow-hidden w-64" style={{ bottom: pos.bottom, left: pos.left, transform: 'translateZ(0)' }}>
+                    <div className="px-2 py-1.5 border-b theme-border">
+                        <input
+                            ref={searchRef}
+                            type="text"
+                            value={npcSearch}
+                            onChange={(e) => setNpcSearch(e.target.value)}
+                            placeholder="Search NPCs..."
+                            className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-green-500/50"
+                            onKeyDown={(e) => e.stopPropagation()}
+                        />
+                    </div>
+                    <div className="px-2 py-1 border-b theme-border flex items-center justify-between">
+                        <button
+                            onClick={onToggleBroadcast}
+                            className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
+                        >
+                            {broadcastMode ? '● Multi' : '○ Single'}
+                        </button>
+                        <div className="flex gap-2">
+                            {broadcastMode && <button onClick={() => startTransition(() => onChangeSelected(filteredNPCs.map((n: any) => n.value)))} className="text-[9px] text-green-400 hover:text-green-300">All</button>}
+                            <button onClick={() => startTransition(() => onChangeSelected([]))} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
+                        </div>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto p-1">
+                        {filteredNPCs.map((npc: any) => {
+                            const npcKey = npc.value;
+                            const checked = (pendingValue ? pendingValue === npcKey : selectedNPCs.includes(npcKey));
+                            const sourceIcon = npc.source === 'project' ? '📁' : npc.source === 'global' ? '🌐' : '';
+                            return (
+                                <div key={`${npc.source}-${npc.value}`} className={`px-2 py-1.5 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-green-500/20 text-green-200' : 'hover:bg-white/5'}`}
+                                    onClick={() => {
+                                        if (broadcastMode) {
+                                            setPendingValue(null);
+                                            startTransition(() => onChangeSelected((prev: string[]) => prev.includes(npcKey) ? (prev.length === 1 ? prev : prev.filter(x => x !== npcKey)) : [...prev, npcKey]));
+                                            if (!checked) startTransition(() => onSelectCurrent(npc.value));
+                                        } else {
+                                            setOpen(false);
+                                            setPendingValue(npcKey);
+                                            startTransition(() => {
+                                                onChangeSelected([npcKey]);
+                                                if (!checked) onSelectCurrent(npc.value);
+                                            });
+                                        }
+                                    }}>
+                                    <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${checked ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
+                                        {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                    </div>
+                                    <span className="truncate flex-1">{npc.display_name}</span>
+                                    <span className="text-[9px] text-gray-600 flex-shrink-0">{sourceIcon}</span>
+                                </div>
+                            );
+                        })}
+                        {filteredNPCs.length === 0 && (
+                            <div className="px-2 py-3 text-xs text-gray-500 text-center">No NPCs found</div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+});
+NpcsMenu.displayName = 'NpcsMenu';
 
 const ChatInput: React.FC<ChatInputProps> = (props) => {
     const {
@@ -363,7 +520,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                     currentPath,
                     model: currentModel,
                     provider: currentProvider,
-                    npc: currentNPC,
+                    npc: npcSelectionToName(availableNPCs, currentNPC),
                     instructions: compressInstructions,
                 }),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Compression timed out after 15s')), 15000)),
@@ -545,12 +702,10 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         if (!npcName) return;
         setNpcToolsLoading(true);
         try {
-            const teamsData = await (window as any).api.teamsRead?.() || {};
-            const registeredTeams = Object.values(teamsData.teams || {});
-            const teamPaths = registeredTeams;
-            const url = `${BACKEND_URL}/api/npc_tools?npc=${encodeURIComponent(npcName)}&registered_teams=${encodeURIComponent(teamPaths.join(','))}&currentPath=${encodeURIComponent(currentPath || '')}`;
-            const res = await fetch(url);
-            const data = await res.json();
+            const teamPaths = npcTeamPathsFor(availableNPCs);
+            const bareNpcName = npcSelectionToName(availableNPCs, npcName) || npcName;
+            const npc = resolveNpcBySelection(availableNPCs, npcName);
+            const data = await getNpcToolsCached(npc, bareNpcName, teamPaths, currentPath);
             if (data.error) {
                 console.error('[NPC Tools] Error:', data.error);
             } else {
@@ -612,12 +767,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     }, [availableMcpServers]);
 
-    const [showNpcsDropdown, setShowNpcsDropdown] = useState(false);
-    const [npcDropdownPos, setNpcDropdownPos] = useState<{ bottom: number; left: number } | null>(null);
-
-    const [npcSearch, setNpcSearch] = useState('');
     const [jinxSearch, setJinxSearch] = useState('');
-    const npcSearchRef = useRef<HTMLInputElement>(null);
     const jinxSearchRef = useRef<HTMLInputElement>(null);
 
     const [disableThinking, setDisableThinking] = useState(() => {
@@ -634,7 +784,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     });
     const [showJinxConfigDropdown, setShowJinxConfigDropdown] = useState(false);
     const jinxConfigDropdownRef = useRef<HTMLDivElement>(null);
-    const npcsDropdownRef = useRef<HTMLDivElement>(null);
 
     const firstJinxInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
@@ -674,20 +823,16 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     }, [showMcpServersDropdown, setShowMcpServersDropdown]);
 
     useEffect(() => {
-        if (!showNpcsDropdown && !showJinxConfigDropdown) return;
+        if (!showJinxConfigDropdown) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
-                setShowNpcsDropdown(false);
                 setShowJinxConfigDropdown(false);
             }
         };
 
         const handleClickOutside = (e: MouseEvent) => {
-            if (showNpcsDropdown && npcsDropdownRef.current && !npcsDropdownRef.current.contains(e.target as Node)) {
-                setShowNpcsDropdown(false);
-            }
-            if (showJinxConfigDropdown && jinxConfigDropdownRef.current && !jinxConfigDropdownRef.current.contains(e.target as Node)) {
+            if (jinxConfigDropdownRef.current && !jinxConfigDropdownRef.current.contains(e.target as Node)) {
                 setShowJinxConfigDropdown(false);
             }
         };
@@ -698,18 +843,10 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             document.removeEventListener('keydown', handleKeyDown);
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [showNpcsDropdown, showJinxConfigDropdown]);
+    }, [showJinxConfigDropdown]);
 
     const isJinxMode = false;
     const hasJinxContent = false;
-
-    const filteredNPCs = useMemo(() => {
-        if (!npcSearch.trim()) return availableNPCs;
-        const q = npcSearch.toLowerCase();
-        return availableNPCs.filter((n: any) =>
-            n.display_name?.toLowerCase().includes(q) || n.value?.toLowerCase().includes(q)
-        );
-    }, [availableNPCs, npcSearch]);
 
     const filteredJinxes = useMemo(() => {
         if (!jinxSearch.trim()) return jinxesToDisplay;
@@ -718,19 +855,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             j.name?.toLowerCase().includes(q) || j.group?.toLowerCase().includes(q) || j.description?.toLowerCase().includes(q)
         );
     }, [jinxesToDisplay, jinxSearch]);
-
-    useEffect(() => {
-        if (showNpcsDropdown) {
-            setNpcSearch('');
-            setTimeout(() => npcSearchRef.current?.focus(), 50);
-            const rect = npcsDropdownRef.current?.getBoundingClientRect();
-            if (rect) {
-                setNpcDropdownPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left });
-            }
-        } else {
-            setNpcDropdownPos(null);
-        }
-    }, [showNpcsDropdown]);
 
     useEffect(() => {
         if (showJinxDropdown) {
@@ -1502,81 +1626,17 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
 
                 <div className={`px-1.5 py-1 pb-1.5 relative z-50 flex-shrink-0 ${isStreaming ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-1">
-                    <div className="relative flex-1 min-w-0 w-1/3" ref={npcsDropdownRef}>
-                        <button
-                            className={`w-full h-7 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 border px-2 ${
-                                selectedNPCs.length > 1
-                                    ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-green-200 border-green-400/40'
-                                    : 'theme-bg-secondary theme-text-secondary theme-border theme-hover'
-                            }`}
-                            disabled={npcsLoading || !!npcsError}
-                            onClick={() => { setShowNpcsDropdown(!showNpcsDropdown); setShowJinxDropdown(false); }}
-                        >
-                            {selectedNPCs.length > 1 && (
-                                <span className="w-4 h-4 rounded bg-green-500 text-white text-[9px] flex items-center justify-center font-bold flex-shrink-0">{selectedNPCs.length}</span>
-                            )}
-                            <span className="truncate">
-                                {npcsLoading ? '...' : npcsError ? 'Error' :
-                                    selectedNPCs.length === 1 ? ((availableNPCs.find((n: any) => n.value === selectedNPCs[0])?.display_name || selectedNPCs[0]).split(' | ')[0]) : selectedNPCs.length === 0 ? 'NPC' : 'NPCs'
-                                }
-                            </span>
-                            <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showNpcsDropdown ? 'rotate-180' : ''}`} />
-                        </button>
-                        {showNpcsDropdown && !npcsLoading && !npcsError && npcDropdownPos && (
-                            <div className="npc-agent-selector-dropdown pointer-events-auto fixed z-[100] theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-64" style={{ bottom: npcDropdownPos.bottom, left: npcDropdownPos.left }}>
-                                <div className="px-2 py-1.5 border-b theme-border">
-                                    <input
-                                        ref={npcSearchRef}
-                                        type="text"
-                                        value={npcSearch}
-                                        onChange={(e) => setNpcSearch(e.target.value)}
-                                        placeholder="Search NPCs..."
-                                        className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-green-500/50"
-                                        onKeyDown={(e) => e.stopPropagation()}
-                                    />
-                                </div>
-                                <div className="px-2 py-1 border-b theme-border flex items-center justify-between">
-                                    <button
-                                        onClick={() => setBroadcastMode(!broadcastMode)}
-                                        className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
-                                    >
-                                        {broadcastMode ? '● Multi' : '○ Single'}
-                                    </button>
-                                    <div className="flex gap-2">
-                                        {broadcastMode && <button onClick={() => setSelectedNPCs(filteredNPCs.map((n: any) => n.value))} className="text-[9px] text-green-400 hover:text-green-300">All</button>}
-                                        <button onClick={() => setSelectedNPCs([])} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
-                                    </div>
-                                </div>
-                                <div className="max-h-64 overflow-y-auto p-1">
-                                    {filteredNPCs.map((npc: any) => {
-                                        const npcKey = npc.value;
-                                        const checked = selectedNPCs.includes(npcKey);
-                                        const teamPath = npc.source === 'project' ? '📁' : npc.source === 'global' ? '🌐' : '';
-                                        return (
-                                            <div key={`${npc.source}-${npc.value}`} className={`px-2 py-1.5 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-green-500/20 text-green-200' : 'hover:bg-white/5'}`}
-                                                onClick={() => {
-                                                    if (broadcastMode) {
-                                                        setSelectedNPCs(prev => prev.includes(npcKey) ? (prev.length === 1 ? prev : prev.filter(x => x !== npcKey)) : [...prev, npcKey]);
-                                                    } else {
-                                                        setSelectedNPCs([npcKey]);
-                                                    }
-                                                    if (!checked) setCurrentNPC(npc.value);
-                                                }}>
-                                                <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${checked ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
-                                                    {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                                </div>
-                                                <span className="truncate flex-1">{npc.display_name}</span>
-                                                <span className="text-[9px] text-gray-600 flex-shrink-0">{teamPath}</span>
-                                            </div>
-                                        );
-                                    })}
-                                    {filteredNPCs.length === 0 && (
-                                        <div className="px-2 py-3 text-xs text-gray-500 text-center">No NPCs found</div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    <NpcsMenu
+                        availableNPCs={availableNPCs}
+                        selectedNPCs={selectedNPCs}
+                        onChangeSelected={setSelectedNPCs}
+                        onSelectCurrent={setCurrentNPC}
+                        loading={npcsLoading}
+                        error={npcsError}
+                        broadcastMode={broadcastMode}
+                        onToggleBroadcast={() => setBroadcastMode(!broadcastMode)}
+                        onOpen={() => { if (showJinxDropdown) setShowJinxDropdown(false); }}
+                    />
 
                     <div className="relative flex-1 min-w-0 w-1/3">
                         <ToolDropdown

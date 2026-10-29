@@ -234,7 +234,6 @@ export const usePredictiveText = ({
     setPredictionSuggestionRef.current = setPredictionSuggestion;
 
     useEffect(() => {
-        console.log('[PRED] Setting up stream listeners (one-time)');
 
         const handleStreamData = (_: any, { streamId: sid, chunk }: { streamId: string; chunk: any }) => {
             const expectedId = predictionStreamIdRef.current;
@@ -325,10 +324,7 @@ export const usePredictiveText = ({
         const offComplete = (window as any).api?.onStreamComplete?.(handleStreamComplete);
         const offError = (window as any).api?.onStreamError?.(handleStreamError);
 
-        console.log('[PRED] Listeners registered, offData:', !!offData, 'offComplete:', !!offComplete, 'offError:', !!offError);
-
         return () => {
-            console.log('[PRED] Cleaning up stream listeners');
             offData?.();
             offComplete?.();
             offError?.();

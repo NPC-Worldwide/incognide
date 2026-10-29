@@ -24,7 +24,6 @@ export function useWorkspace() {
             id = `window_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             sessionStorage.setItem('incognideWindowId', id);
         }
-        console.log('[WINDOW_ID] Using window ID:', id);
         return id;
     });
 
@@ -51,7 +50,6 @@ export function useWorkspace() {
                 execution_mode: conv.execution_mode || 'chat'
             })) || [];
             setDirectoryConversations(formattedConversations);
-            console.log('[loadConversationsWithoutAutoSelect] Loaded conversations without selecting');
         } catch (err: any) {
             console.error('Error loading conversations:', err);
             setDirectoryConversations([]);

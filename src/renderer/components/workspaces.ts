@@ -96,7 +96,6 @@ export const deserializeWorkspace = async (
     generateId: () => string,
     getConversationStats: (messages: any[]) => any
 ) => {
-    console.log('[WORKSPACE] deserializeWorkspace called with', Object.keys(workspaceData?.contentData || {}));
     if (!workspaceData) return false;
 
     setIsLoadingWorkspace(true);
@@ -208,7 +207,6 @@ export const deserializeWorkspace = async (
                                 if (!paneDataRef.provider && lastAssistant.provider) paneDataRef.provider = lastAssistant.provider;
                             }
                         }
-                        console.log('[WORKSPACE RESTORE] Loaded', formatted.length, 'messages for chat pane', paneId);
                     } else if (pd.contentType === 'browser') {
                         paneDataRef.browserUrl = pd.browserUrl || pd.contentId;
                     }
@@ -222,15 +220,6 @@ export const deserializeWorkspace = async (
 
         await Promise.all(loadPromises);
 
-        console.log('[WORKSPACE] All content loaded. ContentDataRef keys:', Object.keys(contentDataRef.current));
-        for (const [paneId, paneData] of Object.entries(contentDataRef.current)) {
-            const pd = paneData as any;
-            if ((pd.contentType === 'chat' || pd.contentType === 'agent')) {
-                console.log('[WORKSPACE] Chat pane', paneId, 'has', pd.chatMessages?.allMessages?.length || 0, 'messages');
-            }
-        }
-
-        console.log('[WORKSPACE] Triggering re-render...');
         setRootLayoutNode((prev: any) => ({ ...prev }));
 
         setIsLoadingWorkspace(false);

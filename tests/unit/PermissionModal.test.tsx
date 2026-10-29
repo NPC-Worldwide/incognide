@@ -117,4 +117,34 @@ describe('PermissionModal', () => {
     const modal = container.querySelector('[tabIndex="-1"]');
     expect(document.activeElement).toBe(modal);
   });
+
+  it('renders as a fixed overlay so it never scrolls with streaming content', () => {
+    const { container } = render(
+      <PermissionModal
+        request={baseRequest}
+        pendingCount={1}
+        onDecision={mockOnDecision}
+        isActivePane={true}
+      />
+    );
+
+    const modal = container.querySelector('[tabIndex="-1"]');
+    expect(modal).toHaveClass('fixed');
+    expect(modal).not.toHaveClass('absolute');
+  });
+
+  it('auto-focuses without scrolling the pane', () => {
+    const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus');
+    render(
+      <PermissionModal
+        request={baseRequest}
+        pendingCount={1}
+        onDecision={mockOnDecision}
+        isActivePane={true}
+      />
+    );
+
+    expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
+    focusSpy.mockRestore();
+  });
 });

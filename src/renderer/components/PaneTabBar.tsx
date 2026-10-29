@@ -1,4 +1,4 @@
-import { getFileName } from './utils';
+import { getFileName, npcBareName } from './utils';
 import React, { useCallback, useRef, useState } from 'react';
 import {
     X, Plus, MessageSquare, Terminal, Globe, FileText, Image, Book, File, GripVertical, Folder,
@@ -110,7 +110,7 @@ const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string =>
             || [];
         const lastAssistant = Array.isArray(msgs) ? [...msgs].reverse().find((m: any) => m?.role === 'assistant' && m?.npc) : null;
         const shortId = tab.contentId ? String(tab.contentId).slice(-6) : '';
-        const name = (tab as any).npc || vd?.npc || parentPd?.npc || lastAssistant?.npc;
+        const name = npcBareName((tab as any).npc || vd?.npc || parentPd?.npc || lastAssistant?.npc);
         if (name) return `${name}${shortId ? ` ${shortId}` : ''}`;
         return shortId || (tab.contentType === 'agent' ? 'Agent' : 'Chat');
     }

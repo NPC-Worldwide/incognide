@@ -88,13 +88,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        console.log('[AUTH DEBUG] clerk instance:', clerk);
-        console.log('[AUTH DEBUG] clerkLoaded:', clerkLoaded);
-        console.log('[AUTH DEBUG] clerkjs loaded:', !!(clerk as any)?.clerkjs);
-        console.log('[AUTH DEBUG] publishableKey:', import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || 'NOT SET');
-    }, [clerk, clerkLoaded]);
-
-    useEffect(() => {
         const stored = localStorage.getItem(HAS_PASSPHRASE_KEY);
         setHasPassphrase(stored === 'true');
 

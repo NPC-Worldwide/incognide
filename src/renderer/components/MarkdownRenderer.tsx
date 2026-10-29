@@ -602,4 +602,4 @@ const MarkdownRenderer = ({ content, onOpenFile }: { content: string; onOpenFile
   return <ContentWithImages content={content} onOpenFile={onOpenFile} />;
 };
 
-export default MarkdownRenderer;
+export default memo(MarkdownRenderer);
