@@ -8,7 +8,7 @@ flask_sse
 redis
 pyyaml
 pillow
-npcpy[system1]>=2.1.25
+npcpy[system1]>=2.1.26
 sentence_transformers
 scikit-learn
 anthropic

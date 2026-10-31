@@ -1,6 +1,6 @@
 import { getFileName } from './utils';
 import React, { useEffect, useRef, useState, memo, useCallback } from 'react';
-import { ArrowLeft, ArrowRight, RotateCcw, Globe, Home, X, Plus, Settings, Trash2, Lock, GripVertical, Puzzle, Download, FolderOpen, Key, Eye, EyeOff, Shield, Check, Maximize2, Minimize2, Star } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCcw, Globe, Home, X, Plus, Settings, Trash2, Lock, GripVertical, Puzzle, Download, FolderOpen, Key, Eye, EyeOff, Shield, Check, Maximize2, Minimize2, Star, ChevronDown, Bookmark, History } from 'lucide-react';
 const browserStateCache = new Map<string, {
     initialized: boolean;
     lastUrl: string;
@@ -77,6 +77,9 @@ const WebBrowserViewer = memo(({
     const [showPasswordValue, setShowPasswordValue] = useState<string | null>(null);
     const [showRefreshMenu, setShowRefreshMenu] = useState(false);
     const [showBrowserMenu, setShowBrowserMenu] = useState(false);
+    const [showBookmarksMenu, setShowBookmarksMenu] = useState(false);
+    const [bookmarks, setBookmarks] = useState<any[]>([]);
+    const [bookmarksLoading, setBookmarksLoading] = useState(false);
 
     const [findText, setFindText] = useState('');
     const [showFindBar, setShowFindBar] = useState(false);
@@ -1356,20 +1359,63 @@ const WebBrowserViewer = memo(({
 
     useEffect(() => { refreshBookmarkState(); }, [refreshBookmarkState]);
 
-    const handleBookmarkCurrent = useCallback(async () => {
+    const loadBookmarks = useCallback(async () => {
+        if (!currentPath) return;
+        setBookmarksLoading(true);
+        try {
+            const result = await (window as any).api?.browserGetBookmarks?.({ folderPath: currentPath });
+            if (result?.success) {
+                setBookmarks(result.bookmarks || []);
+            }
+        } catch (err) {
+            console.error('[Browser] Failed to load bookmarks:', err);
+        } finally {
+            setBookmarksLoading(false);
+        }
+    }, [currentPath]);
+
+    useEffect(() => {
+        if (showBookmarksMenu) {
+            loadBookmarks();
+        }
+    }, [showBookmarksMenu, loadBookmarks]);
+
+    const handleToggleBookmark = useCallback(async () => {
         if (!currentUrl || currentUrl === 'about:blank') return;
         try {
-            await (window as any).api?.browserAddBookmark?.({
-                url: currentUrl,
-                title: title || currentUrl,
-                folderPath: currentPath,
-                isGlobal: false
-            });
-            setIsBookmarked(true);
+            if (isBookmarked) {
+                const result = await (window as any).api?.browserGetBookmarks?.({ folderPath: currentPath });
+                if (result?.success) {
+                    const match = result.bookmarks.find((bm: any) => bm.url === currentUrl && (bm.folder_path === currentPath || bm.is_global));
+                    if (match) {
+                        await (window as any).api?.browserDeleteBookmark?.({ bookmarkId: match.id });
+                    }
+                }
+                setIsBookmarked(false);
+            } else {
+                await (window as any).api?.browserAddBookmark?.({
+                    url: currentUrl,
+                    title: title || currentUrl,
+                    folderPath: currentPath,
+                    isGlobal: false
+                });
+                setIsBookmarked(true);
+            }
+            loadBookmarks();
         } catch (err) {
-            console.error('[Browser] Failed to bookmark current page:', err);
+            console.error('[Browser] Failed to toggle bookmark:', err);
         }
-    }, [currentUrl, title, currentPath]);
+    }, [currentUrl, title, currentPath, isBookmarked, loadBookmarks]);
+
+    const handleDeleteBookmark = useCallback(async (bookmarkId: number) => {
+        try {
+            await (window as any).api?.browserDeleteBookmark?.({ bookmarkId });
+            loadBookmarks();
+            refreshBookmarkState();
+        } catch (err) {
+            console.error('[Browser] Failed to delete bookmark:', err);
+        }
+    }, [loadBookmarks, refreshBookmarkState]);
 
     useEffect(() => {
         const api = (window as any).api;
@@ -2263,8 +2309,8 @@ const WebBrowserViewer = memo(({
                         onMouseUp={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
                         onMouseLeave={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
                         disabled={!canGoBack}
-                        className="p-1 theme-hover rounded disabled:opacity-30"
-                        title="Back (right-click or long-press for history)"
+                        className={`p-1 rounded transition-colors ${canGoBack ? 'theme-hover text-blue-400 hover:bg-blue-500/10' : 'text-gray-500 opacity-40 cursor-not-allowed'}`}
+                        title="Back (Alt+Left, right-click or long-press for history)"
                     ><ArrowLeft size={16} /></button>
                     <button
                         onClick={handleForward}
@@ -2273,8 +2319,8 @@ const WebBrowserViewer = memo(({
                         onMouseUp={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
                         onMouseLeave={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
                         disabled={!canGoForward}
-                        className="p-1 theme-hover rounded disabled:opacity-30"
-                        title="Forward (right-click or long-press for history)"
+                        className={`p-1 rounded transition-colors ${canGoForward ? 'theme-hover text-blue-400 hover:bg-blue-500/10' : 'text-gray-500 opacity-40 cursor-not-allowed'}`}
+                        title="Forward (Alt+Right, right-click or long-press for history)"
                     ><ArrowRight size={16} /></button>
                     {navHistoryDropdown && (
                         <>
@@ -2310,20 +2356,20 @@ const WebBrowserViewer = memo(({
                         </>
                     )}
                     <div className="relative">
-                        <div className="flex items-center">
+                        <div className="flex items-center overflow-hidden rounded">
                             <button
                                 onClick={handleRefresh}
-                                className="p-1 theme-hover rounded-l"
-                                title="Refresh"
+                                className="p-1 theme-hover text-blue-400 hover:bg-blue-500/10"
+                                title="Refresh (Ctrl+R)"
                             >
                                 <RotateCcw size={16} className={loading ? 'animate-spin' : ''} />
                             </button>
                             <button
-                                onClick={() => { setShowRefreshMenu(!showRefreshMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); }}
-                                className="px-0.5 py-1 theme-hover rounded-r border-l theme-border text-gray-400"
+                                onClick={() => { setShowRefreshMenu(!showRefreshMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); setShowBookmarksMenu(false); }}
+                                className="px-0.5 py-1 theme-hover border-l theme-border text-gray-400 hover:text-blue-400"
                                 title="Refresh options"
                             >
-                                <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><path d="M1 3l3 3 3-3z"/></svg>
+                                <ChevronDown size={12} />
                             </button>
                         </div>
                         {showRefreshMenu && (
@@ -2351,7 +2397,7 @@ const WebBrowserViewer = memo(({
                 <div className="flex-1 flex items-center min-w-0 px-1 gap-1" draggable={false} onDragStart={(e) => e.stopPropagation()}>
                     <div className="relative">
                         <button
-                            onClick={() => { setShowBrowserMenu(!showBrowserMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); }}
+                            onClick={() => { setShowBrowserMenu(!showBrowserMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); setShowBookmarksMenu(false); }}
                             className="p-1 theme-hover rounded"
                             title="Browser menu"
                         >
@@ -2360,10 +2406,24 @@ const WebBrowserViewer = memo(({
                         {showBrowserMenu && (
                             <>
                                 <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setShowBrowserMenu(false)} />
-                                <div className="absolute top-full left-0 mt-1 theme-bg-secondary border theme-border rounded-lg shadow-lg z-50 min-w-[180px]">
+                                <div className="absolute top-full left-0 mt-1 theme-bg-secondary border theme-border rounded-lg shadow-lg z-50 min-w-[200px]">
                                     <div className="py-1">
-                                        <button onClick={() => { handleClearCache(); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left"><Trash2 size={12} />Clear Cache</button>
-                                        <button onClick={() => { handleClearCookies(); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left"><Trash2 size={12} />Clear Cookies</button>
+                                        <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Navigation</div>
+                                        <button onClick={() => { setShowBookmarksMenu(true); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left theme-text-primary"><Bookmark size={12} className="text-yellow-400" />Bookmarks</button>
+                                        <button onClick={() => { window.dispatchEvent(new CustomEvent('browser-open-history-dialog', { detail: { currentPath } })); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left theme-text-primary"><History size={12} className="text-blue-400" />History</button>
+                                        <button onClick={() => { handleNewBrowserTab('', nodeId); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left theme-text-primary"><Plus size={12} className="text-green-400" />New Tab</button>
+                                    </div>
+                                    <div className="border-t theme-border py-1">
+                                        <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Tools</div>
+                                        <button onClick={() => { setShowExtensionsMenu(true); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left theme-text-primary"><Puzzle size={12} className="text-purple-400" />Extensions</button>
+                                        <button onClick={() => { setShowPasswordsMenu(true); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left theme-text-primary"><Key size={12} className="text-green-400" />Passwords</button>
+                                        <button onClick={() => { setShowPermissionsMenu(true); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left theme-text-primary"><Shield size={12} className="text-blue-400" />Site Permissions</button>
+                                        <button onClick={() => { setShowSessionMenu(true); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left theme-text-primary"><Settings size={12} className="text-gray-400" />Browser Settings</button>
+                                    </div>
+                                    <div className="border-t theme-border py-1">
+                                        <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Data</div>
+                                        <button onClick={() => { handleClearCache(); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left theme-text-primary"><Trash2 size={12} className="text-gray-400" />Clear Cache</button>
+                                        <button onClick={() => { handleClearCookies(); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left theme-text-primary"><Trash2 size={12} className="text-gray-400" />Clear Cookies</button>
                                         <button onClick={() => { handleClearSessionData(); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-400 theme-hover text-left"><Trash2 size={12} />Clear All Data</button>
                                     </div>
                                 </div>
@@ -2374,7 +2434,68 @@ const WebBrowserViewer = memo(({
                         {isSecure ? <Lock size={16} className="text-green-400 flex-shrink-0" /> : <Globe size={16} className="text-gray-400 flex-shrink-0" />}
                         <input ref={urlInputRef} type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleNavigate()} onFocus={(e) => e.target.select()} onContextMenu={(e) => e.stopPropagation()} placeholder="Search or enter URL..." className="browser-url-input flex-1 bg-transparent text-sm theme-text-primary outline-none min-w-0" draggable={false} onDragStart={(e) => e.stopPropagation()} />
                     </div>
-                    <button onClick={() => handleBookmarkCurrent()} className="p-1 theme-hover rounded text-yellow-400" title="Bookmark current page"><Star size={16} fill={isBookmarked ? 'currentColor' : 'none'} /></button>
+                    <div className="relative flex items-center">
+                        <button
+                            onClick={handleToggleBookmark}
+                            className={`p-1 rounded transition-colors ${isBookmarked ? 'text-yellow-400 hover:bg-yellow-400/10' : 'text-gray-400 hover:text-yellow-400 theme-hover'}`}
+                            title={isBookmarked ? 'Remove bookmark (Ctrl+D)' : 'Bookmark current page (Ctrl+D)'}
+                        >
+                            <Star size={16} fill={isBookmarked ? 'currentColor' : 'none'} />
+                        </button>
+                        <button
+                            onClick={() => { setShowBookmarksMenu(!showBookmarksMenu); setShowBrowserMenu(false); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); }}
+                            className="px-0.5 py-1 theme-hover rounded text-gray-400 hover:text-yellow-400"
+                            title="Show bookmarks"
+                        >
+                            <ChevronDown size={12} />
+                        </button>
+                        {showBookmarksMenu && (
+                            <>
+                                <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setShowBookmarksMenu(false)} />
+                                <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded-lg shadow-lg z-50 min-w-[260px] max-h-[360px] overflow-auto">
+                                    <div className="p-2 border-b theme-border flex items-center justify-between">
+                                        <span className="text-xs font-medium theme-text-primary flex items-center gap-1"><Bookmark size={14} className="text-yellow-400" /> Bookmarks</span>
+                                        {isBookmarked && (
+                                            <span className="text-[10px] text-yellow-400">current saved</span>
+                                        )}
+                                    </div>
+                                    {bookmarksLoading ? (
+                                        <div className="px-3 py-4 text-center text-xs theme-text-muted">
+                                            <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-1"></div>
+                                            Loading...
+                                        </div>
+                                    ) : bookmarks.length === 0 ? (
+                                        <div className="px-3 py-4 text-center text-xs theme-text-muted">
+                                            <Bookmark size={20} className="mx-auto mb-1 opacity-50" />
+                                            No bookmarks yet
+                                        </div>
+                                    ) : (
+                                        <div className="py-1">
+                                            {bookmarks.map((bm: any) => (
+                                                <div key={bm.id} className="flex items-center gap-2 px-2 py-1.5 theme-hover group">
+                                                    <button
+                                                        onClick={() => { if (webviewRef.current) webviewRef.current.src = bm.url; setShowBookmarksMenu(false); }}
+                                                        className="flex-1 min-w-0 text-left"
+                                                        title={bm.url}
+                                                    >
+                                                        <div className="text-xs theme-text-primary truncate">{bm.title || bm.url}</div>
+                                                        <div className="text-[10px] theme-text-muted truncate">{bm.url}</div>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteBookmark(bm.id)}
+                                                        className="p-1 theme-hover rounded text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        title="Delete bookmark"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
                     <button onClick={() => handleNewBrowserTab('', nodeId)} className="p-1 theme-hover rounded" title="New tab (Ctrl+T)"><Plus size={16} /></button>
                 </div>
 
@@ -2416,7 +2537,7 @@ const WebBrowserViewer = memo(({
 
                     <div className="relative">
                         <button
-                            onClick={() => { setShowPermissionsMenu(!showPermissionsMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); setShowRefreshMenu(false); }}
+                            onClick={() => { setShowPermissionsMenu(!showPermissionsMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); setShowRefreshMenu(false); setShowBookmarksMenu(false); }}
                             className={`p-1 theme-hover rounded ${getPermissionsForSite(currentUrl).length > 0 ? 'text-blue-400' : ''}`}
                             title="Site Permissions"
                         >
@@ -2456,7 +2577,7 @@ const WebBrowserViewer = memo(({
 
                     <div className="relative">
                         <button
-                            onClick={() => { setShowPasswordsMenu(!showPasswordsMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); }}
+                            onClick={() => { setShowPasswordsMenu(!showPasswordsMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); setShowBookmarksMenu(false); }}
                             className="p-1 theme-hover rounded"
                             title="Saved Passwords"
                         >
@@ -2508,7 +2629,7 @@ const WebBrowserViewer = memo(({
                     </div>
 
                     <div className="relative">
-                        <button onClick={() => { setShowExtensionsMenu(!showExtensionsMenu); setShowSessionMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); }} className={`p-1 theme-hover rounded ${extensions.length > 0 ? 'text-purple-400' : ''}`} title="Extensions"><Puzzle size={16} /></button>
+                        <button onClick={() => { setShowExtensionsMenu(!showExtensionsMenu); setShowSessionMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); setShowBookmarksMenu(false); }} className={`p-1 theme-hover rounded ${extensions.length > 0 ? 'text-purple-400' : ''}`} title="Extensions"><Puzzle size={16} /></button>
                         {showExtensionsMenu && (
                             <>
                                 <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setShowExtensionsMenu(false)} />
@@ -2556,7 +2677,7 @@ const WebBrowserViewer = memo(({
                     </div>
 
                     <div className="relative">
-                        <button onClick={() => { setShowSessionMenu(!showSessionMenu); setShowExtensionsMenu(false); setShowRefreshMenu(false); }} className="p-1 theme-hover rounded" title="Settings"><Settings size={16} /></button>
+                        <button onClick={() => { setShowSessionMenu(!showSessionMenu); setShowExtensionsMenu(false); setShowRefreshMenu(false); setShowBookmarksMenu(false); }} className="p-1 theme-hover rounded" title="Settings"><Settings size={16} /></button>
                         {showSessionMenu && (
                             <>
                                 <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setShowSessionMenu(false)} />

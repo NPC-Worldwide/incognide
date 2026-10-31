@@ -1404,9 +1404,16 @@ export const usePaneAwareStreamListeners = (
 
                 const applyUsage = (u: any) => {
                     if (!u) return;
-                    currentMsg.input_tokens = u.input_tokens;
-                    currentMsg.output_tokens = u.output_tokens;
-                    currentMsg.cost = u.cost;
+                    let inBase = 0, outBase = 0, costBase = 0;
+                    for (const m of paneData.chatMessages.allMessages) {
+                        if (m.streamId !== incomingStreamId) continue;
+                        inBase += m.input_tokens || 0;
+                        outBase += m.output_tokens || 0;
+                        costBase += m.cost || 0;
+                    }
+                    currentMsg.input_tokens = (currentMsg.input_tokens || 0) + Math.max(0, (u.input_tokens || 0) - inBase);
+                    currentMsg.output_tokens = (currentMsg.output_tokens || 0) + Math.max(0, (u.output_tokens || 0) - outBase);
+                    currentMsg.cost = (currentMsg.cost || 0) + Math.max(0, (u.cost || 0) - costBase);
                     paneData.chatStats = getConversationStats(paneData.chatMessages.allMessages);
                     saveAssistantMessage(paneData, currentMsg);
                 };
