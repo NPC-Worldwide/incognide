@@ -95,6 +95,8 @@ provider, then expand its card to load the models available to your key;
 
 #### OrcaRouter
 
+Try out almost 200 different models from 15 different providers with OrcaRouter using our [referral link](https://www.orcarouter.ai/ref/ref_900cb60d234853be6842)!
+
 [OrcaRouter](https://www.orcarouter.ai) is a first-class provider, so it appears in the provider list and the model selector like any other. It offers two independent ways to connect, both shown in the OrcaRouter card in **Model Manager**:
 
 | Choice | How it works | Credential |

@@ -607,6 +607,12 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
     }, [isResizingRightSidebar]);
 
+    useEffect(() => {
+        const onOpenHistory = () => setBrowserUrlDialogOpen(true);
+        window.addEventListener('browser-open-history-dialog', onOpenHistory);
+        return () => window.removeEventListener('browser-open-history-dialog', onOpenHistory);
+    }, []);
+
 
     const {
         sidebarWidth, setSidebarWidth, inputHeight, setInputHeight,

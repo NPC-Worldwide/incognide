@@ -134,6 +134,42 @@ describe('stream message rotation', () => {
         unmount();
     });
 
+    it('attributes usage as deltas so rotated bubbles sum to the true totals', () => {
+        const { send, all, unmount } = setupStream();
+
+        send({ choices: [{ delta: { content: 'Q' } }] });
+        send({ type: 'usage', input_tokens: 100, output_tokens: 10, cost: 0.01 });
+        send({ type: 'tool_start', name: 'my_tool', args: { x: 1 }, id: 'c1' });
+        send({ type: 'tool_complete', name: 'my_tool', id: 'c1', result_preview: 'r1' });
+        send({ choices: [{ delta: { content: 'A' } }] });
+        send({ type: 'usage', input_tokens: 250, output_tokens: 30, cost: 0.03 });
+
+        expect(all()).toHaveLength(2);
+        const [first, second] = all();
+        expect([first.input_tokens, first.output_tokens]).toEqual([100, 10]);
+        expect(first.cost).toBeCloseTo(0.01, 10);
+        expect([second.input_tokens, second.output_tokens]).toEqual([150, 20]);
+        expect(second.cost).toBeCloseTo(0.02, 10);
+        expect(all().reduce((s: number, m: any) => s + m.input_tokens, 0)).toBe(250);
+        expect(all().reduce((s: number, m: any) => s + m.output_tokens, 0)).toBe(30);
+        expect(all().reduce((s: number, m: any) => s + m.cost, 0)).toBeCloseTo(0.03, 10);
+
+        unmount();
+    });
+
+    it('ignores duplicate usage snapshots instead of double counting', () => {
+        const { send, all, unmount } = setupStream();
+
+        send({ choices: [{ delta: { content: 'Q' } }] });
+        send({ type: 'usage', input_tokens: 100, output_tokens: 10, cost: 0.01 });
+        send({ type: 'usage', input_tokens: 100, output_tokens: 10, cost: 0.01 });
+
+        expect(all()).toHaveLength(1);
+        expect([all()[0].input_tokens, all()[0].output_tokens, all()[0].cost]).toEqual([100, 10, 0.01]);
+
+        unmount();
+    });
+
     it('lands the interrupt marker on the latest bubble, not the first', async () => {
         const { send, all, refs, notify, unmount } = setupStream();
 

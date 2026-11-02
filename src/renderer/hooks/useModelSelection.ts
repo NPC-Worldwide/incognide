@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 
+const LOAD_RETRY_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000];
+
 const loadUserModelsConfig = async (): Promise<any> => {
-    try {
-        const result = await (window as any).api.userModelsLoad();
-        return result?.config || { providers: [] };
-    } catch {
-        return { providers: [] };
-    }
+    const result = await (window as any).api.userModelsLoad();
+    if (result?.error) throw new Error(result.error);
+    return result?.config || { providers: [] };
 };
 
 export function useModelSelection() {
@@ -48,6 +47,10 @@ export function useModelSelection() {
         pendingAddedModelsRef.current = pendingAddedModels;
     }, [pendingAddedModels]);
     const [fetchedProviderModels, setFetchedProviderModels] = useState<Record<string, string[]>>({});
+    const fetchedProviderModelsRef = useRef(fetchedProviderModels);
+    useEffect(() => {
+        fetchedProviderModelsRef.current = fetchedProviderModels;
+    }, [fetchedProviderModels]);
     // modelId -> context window, mirroring fetchedProviderModels. Kept separate so the
     // string[] shape other memos depend on is untouched.
     const [providerModelContext, setProviderModelContext] = useState<Record<string, Record<string, number>>>({});
@@ -55,11 +58,30 @@ export function useModelSelection() {
 
     useEffect(() => {
         let cancelled = false;
+        const timers: number[] = [];
+        const sleep = (ms: number) => new Promise<void>((resolve) => {
+            timers.push(setTimeout(resolve, ms));
+        });
         (async () => {
-            const config = await loadUserModelsConfig();
-            if (!cancelled) setUserModelsConfig(config);
+            for (let attempt = 0; ; attempt++) {
+                try {
+                    const config = await loadUserModelsConfig();
+                    if (!cancelled) setUserModelsConfig(config);
+                    return;
+                } catch {
+                    if (cancelled) return;
+                    if (attempt >= LOAD_RETRY_DELAYS.length) {
+                        if (!cancelled) setUserModelsConfig({ providers: [] });
+                        return;
+                    }
+                    await sleep(LOAD_RETRY_DELAYS[attempt]);
+                }
+            }
         })();
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+            timers.forEach((t) => clearTimeout(t));
+        };
     }, []);
 
     const currentNpcObject = useMemo(() => {
@@ -105,6 +127,10 @@ export function useModelSelection() {
 
     useEffect(() => {
         let cancelled = false;
+        const timers: number[] = [];
+        const sleep = (ms: number) => new Promise<void>((resolve) => {
+            timers.push(setTimeout(resolve, ms));
+        });
         const fetchMissing = async () => {
             const nextLoading: Record<string, boolean> = {};
             const fetches: Promise<void>[] = [];
@@ -113,28 +139,36 @@ export function useModelSelection() {
                 if (!pKey) continue;
                 const allowedModels = Array.isArray(prov.models) ? prov.models : [];
                 if (allowedModels.length > 0) continue;
-                if (fetchedProviderModels[pKey] !== undefined) continue;
+                if (fetchedProviderModelsRef.current[pKey] !== undefined) continue;
                 nextLoading[pKey] = true;
                 fetches.push((async () => {
-                    try {
-                        const res = await (window as any).api?.getProviderModels?.({ provider: pKey });
-                        const rawModels: any[] = res?.models || [];
-                        const list: string[] = [];
-                        const contextById: Record<string, number> = {};
-                        for (const m of rawModels) {
-                            const id = m?.id || m?.name || m?.value;
-                            if (!id) continue;
-                            list.push(id);
-                            const ctx = m?.context_window ?? m?.context_length ?? m?.max_input_tokens;
-                            if (typeof ctx === 'number' && ctx > 0) contextById[id] = ctx;
-                        }
-                        if (!cancelled) {
-                            setFetchedProviderModels(prev => ({ ...prev, [pKey]: list }));
-                            setProviderModelContext(prev => ({ ...prev, [pKey]: contextById }));
-                        }
-                    } catch {
-                        if (!cancelled) {
-                            setFetchedProviderModels(prev => ({ ...prev, [pKey]: [] }));
+                    for (let attempt = 0; ; attempt++) {
+                        try {
+                            const res = await (window as any).api?.getProviderModels?.({ provider: pKey });
+                            const rawModels: any[] = res?.models || [];
+                            const list: string[] = [];
+                            const contextById: Record<string, number> = {};
+                            for (const m of rawModels) {
+                                const id = m?.id || m?.name || m?.value;
+                                if (!id) continue;
+                                list.push(id);
+                                const ctx = m?.context_window ?? m?.context_length ?? m?.max_input_tokens;
+                                if (typeof ctx === 'number' && ctx > 0) contextById[id] = ctx;
+                            }
+                            if (!cancelled) {
+                                setFetchedProviderModels(prev => ({ ...prev, [pKey]: list }));
+                                setProviderModelContext(prev => ({ ...prev, [pKey]: contextById }));
+                            }
+                            return;
+                        } catch {
+                            if (cancelled) return;
+                            if (attempt >= LOAD_RETRY_DELAYS.length) {
+                                if (!cancelled) {
+                                    setFetchedProviderModels(prev => ({ ...prev, [pKey]: [] }));
+                                }
+                                return;
+                            }
+                            await sleep(LOAD_RETRY_DELAYS[attempt]);
                         }
                     }
                 })());
@@ -158,7 +192,10 @@ export function useModelSelection() {
             }
         };
         fetchMissing();
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+            timers.forEach((t) => clearTimeout(t));
+        };
     }, [ctxProviders]);
 
     const availableModelsFromTeamCtx = useMemo(() => {
@@ -329,8 +366,11 @@ export function useModelSelection() {
     }, [effectiveAvailableModels, favoriteModels, showAllModels]);
 
     const reloadUserModelsConfig = async () => {
-        const config = await loadUserModelsConfig();
-        setUserModelsConfig(config);
+        try {
+            const config = await loadUserModelsConfig();
+            setUserModelsConfig(config);
+        } catch {
+        }
     };
 
     useEffect(() => {
