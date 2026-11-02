@@ -110,6 +110,16 @@ Both paths produce the same durable API key, stored encrypted with Electron `saf
 
 **Models.** The model dropdown is populated from `GET /v1/models` with your own key, so it reflects what your workspace can actually call. Each AI input filters that catalog by capability: text chat keeps only models advertising a text endpoint, attaching an image narrows the list to models that declare image input, and embeddings, image generation, video and rerank use their own dedicated filters. A model that does not declare a required capability is never offered, and a selection that stops being compatible is cleared rather than kept. If discovery fails, a small verified fallback list is shown and labelled as degraded.
 
+#### Runcrate
+
+Get your own key from the [Runcrate dashboard](https://runcrate.ai/dashboard/api-keys)
+and save it as `RUNCRATE_API_KEY` in Global Settings or `~/.incogniderc`. Restart
+Incognide after changing environment variables. Model Manager detects Runcrate and
+uses `https://api.runcrate.ai/v1` for its OpenAI-compatible API to open-weight
+models. Add the detected provider, then expand its card to load the models available
+to your key; `deepseek-ai/DeepSeek-V4.1-Flash` is the default model. API usage is
+billed separately by Runcrate ([docs](https://runcrate.ai/docs/models/overview)).
+
 ### 4. Local setup for fine-tuning
 
 Inference with LLMs is routed through the bundled backend (including calls to locally running models with llama.cpp, omlx, etc), but users can also fine-tune models within incognide. To accomplish this, you need to specify a Python virtual environment with the heavy packages (`torch`+ `transformers` etc.). For such calls, Incognide shells out to the specified venv instead of including these dependencies in the bundled backend to keep the packaged executable small.
