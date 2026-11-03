@@ -101,6 +101,28 @@ describe('ModelManager custom provider', () => {
     expect(await screen.findByText('gpt-6.1-sol')).toBeInTheDocument();
   });
 
+  it('discovers models for a configured Runcrate provider', async () => {
+    const api = window.api as any;
+    api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{
+      name: 'runcrate',
+      api_url: 'https://api.runcrate.ai/v1',
+      api_key_var: 'RUNCRATE_API_KEY',
+    }] } });
+    api.getProviderModels = vi.fn().mockResolvedValue({ models: [
+      { id: 'deepseek-ai/DeepSeek-V4.1-Flash', name: 'deepseek-ai/DeepSeek-V4.1-Flash', provider: 'runcrate' },
+    ] });
+    const user = userEvent.setup();
+    render(<ModelManager />);
+    const label = await screen.findByText('Runcrate');
+    await user.click(label.closest('button')!);
+    await waitFor(() => expect(api.getProviderModels).toHaveBeenCalledWith({
+      provider: 'runcrate',
+      baseUrl: 'https://api.runcrate.ai/v1',
+      apiKeyVar: 'RUNCRATE_API_KEY',
+    }));
+    expect(await screen.findByText('deepseek-ai/DeepSeek-V4.1-Flash')).toBeInTheDocument();
+  });
+
   it('shows a custom provider added without an API key', async () => {
     const user = userEvent.setup();
     render(<ModelManager />);
