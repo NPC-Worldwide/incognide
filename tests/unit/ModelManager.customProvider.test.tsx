@@ -101,6 +101,28 @@ describe('ModelManager custom provider', () => {
     expect(await screen.findByText('gpt-6.1-sol')).toBeInTheDocument();
   });
 
+  it('discovers models for a configured cheapaimodel provider', async () => {
+    const api = window.api as any;
+    api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{
+      name: 'cheapaimodel',
+      api_url: 'https://api.cheapaimodel.ai/v1',
+      api_key_var: 'CHEAPAIMODEL_API_KEY',
+    }] } });
+    api.getProviderModels = vi.fn().mockResolvedValue({ models: [
+      { id: 'deepseek-v4-1-flash', name: 'deepseek-v4-1-flash', provider: 'cheapaimodel' },
+    ] });
+    const user = userEvent.setup();
+    render(<ModelManager />);
+    const label = await screen.findByText('cheapaimodel');
+    await user.click(label.closest('button')!);
+    await waitFor(() => expect(api.getProviderModels).toHaveBeenCalledWith({
+      provider: 'cheapaimodel',
+      baseUrl: 'https://api.cheapaimodel.ai/v1',
+      apiKeyVar: 'CHEAPAIMODEL_API_KEY',
+    }));
+    expect(await screen.findByText('deepseek-v4-1-flash')).toBeInTheDocument();
+  });
+
   it('shows a custom provider added without an API key', async () => {
     const user = userEvent.setup();
     render(<ModelManager />);
