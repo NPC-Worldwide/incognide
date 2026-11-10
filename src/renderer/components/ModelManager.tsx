@@ -17,6 +17,7 @@ export const API_PROVIDER_META: Record<string, { name: string; color: string; bg
     api_route: { name: 'API Route', color: 'text-teal-400', bgColor: 'bg-teal-600', docsUrl: 'https://api-route.com', defaultModel: 'gpt-6.1-sol' },
     anthropic: { name: 'Anthropic', color: 'text-amber-400', bgColor: 'bg-amber-600', docsUrl: 'https://docs.anthropic.com/en/docs/about-claude/models', defaultModel: 'claude-sonnet-4' },
     atlascloud: { name: 'Atlas Cloud', color: 'text-sky-400', bgColor: 'bg-sky-600', docsUrl: 'https://www.atlascloud.ai/docs', defaultModel: 'deepseek-ai/deepseek-v4-flash' },
+    cheapaimodel: { name: 'cheapaimodel', color: 'text-orange-300', bgColor: 'bg-orange-500', docsUrl: 'https://cheapaimodel.ai/docs', defaultModel: 'deepseek-v4-1-flash' },
     cheaperinference: { name: 'Cheaper Inference', color: 'text-emerald-400', bgColor: 'bg-emerald-600', docsUrl: 'https://cheaperinference.com/docs', defaultModel: 'gpt-5.4-mini' },
     deepseek: { name: 'DeepSeek', color: 'text-cyan-400', bgColor: 'bg-cyan-600', docsUrl: 'https://api-docs.deepseek.com/', defaultModel: 'deepseek-chat' },
     demonroute: { name: 'DemonRoute', color: 'text-red-400', bgColor: 'bg-red-600', docsUrl: 'https://demonroute.com/docs', defaultModel: 'hermes-3-llama-3-1-70b' },
@@ -28,6 +29,8 @@ export const API_PROVIDER_META: Record<string, { name: string; color: string; bg
     openrouter: { name: 'OpenRouter', color: 'text-violet-400', bgColor: 'bg-violet-600', docsUrl: 'https://openrouter.ai/models', defaultModel: 'openai/gpt-4o' },
     orcarouter: { name: 'OrcaRouter', color: 'text-cyan-300', bgColor: 'bg-cyan-600', docsUrl: 'https://www.orcarouter.ai', defaultModel: 'orcarouter/auto' },
     perplexity: { name: 'Perplexity', color: 'text-sky-400', bgColor: 'bg-sky-600', docsUrl: 'https://docs.perplexity.ai/', defaultModel: 'sonar-pro' },
+    standardcompute: { name: 'Standard Compute', color: 'text-lime-400', bgColor: 'bg-lime-600', docsUrl: 'https://standardcompute.com', defaultModel: 'StandardCompute' },
+    runcrate: { name: 'Runcrate', color: 'text-blue-400', bgColor: 'bg-blue-700', docsUrl: 'https://runcrate.ai/docs/models/overview', defaultModel: 'deepseek-ai/DeepSeek-V4.1-Flash' },
     together: { name: 'Together', color: 'text-teal-400', bgColor: 'bg-teal-600', docsUrl: 'https://docs.together.ai/docs/models', defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
     xai: { name: 'xAI', color: 'text-gray-300', bgColor: 'bg-gray-600', docsUrl: 'https://docs.x.ai/', defaultModel: 'grok-3' },
 };
