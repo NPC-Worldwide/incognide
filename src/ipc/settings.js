@@ -2559,6 +2559,7 @@ function register(ctx) {
   const KNOWN_PROVIDERS = [
     { provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY', baseUrl: 'https://api.anthropic.com/v1', displayName: 'Anthropic' },
     { provider: 'ai21', envVar: 'AI21_API_KEY', baseUrl: 'https://api.ai21.com/studio/v1', displayName: 'AI21 Labs' },
+    { provider: 'atlascloud', envVar: 'ATLASCLOUD_API_KEY', baseUrl: 'https://api.atlascloud.ai/v1', displayName: 'Atlas Cloud' },
     { provider: 'azure', envVar: 'AZURE_API_KEY', baseUrl: 'https://{your-resource}.openai.azure.com', displayName: 'Azure OpenAI' },
     { provider: 'azure_ai', envVar: 'AZURE_AI_API_KEY', baseUrl: 'https://{your-resource}.cognitiveservices.azure.com', displayName: 'Azure AI' },
     { provider: 'bedrock', envVar: 'AWS_ACCESS_KEY_ID', baseUrl: 'https://bedrock-runtime.{region}.amazonaws.com', displayName: 'Amazon Bedrock' },
