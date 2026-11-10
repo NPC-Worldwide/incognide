@@ -121,6 +121,8 @@ describe('ModelManager custom provider', () => {
       apiKeyVar: 'CHEAPAIMODEL_API_KEY',
     }));
     expect(await screen.findByText('deepseek-v4-1-flash')).toBeInTheDocument();
+  });
+
   it('discovers models for a configured Standard Compute provider', async () => {
     const api = window.api as any;
     api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{
@@ -141,6 +143,8 @@ describe('ModelManager custom provider', () => {
       apiKeyVar: 'STANDARDCOMPUTE_API_KEY',
     }));
     expect(await screen.findByText('StandardCompute')).toBeInTheDocument();
+  });
+
   it('discovers models for a configured Runcrate provider', async () => {
     const api = window.api as any;
     api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{
