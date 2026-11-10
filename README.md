@@ -93,6 +93,14 @@ after changing environment variables. Model Manager detects API Route and uses
 provider, then expand its card to load the models available to your key;
 `gpt-6.1-sol` is the default model. API usage is billed separately by API Route.
 
+#### cheapaimodel
+
+Get your own key from [cheapaimodel](https://console.cheapaimodel.ai/keys) and save
+it as `CHEAPAIMODEL_API_KEY` in Global Settings or `~/.incogniderc`. Restart
+Incognide after changing environment variables. Model Manager detects cheapaimodel
+and uses `https://api.cheapaimodel.ai/v1` for its OpenAI-compatible API. Add the
+detected provider, then expand its card to load the models available to your key;
+`deepseek-v4-1-flash` is the default model. API usage is billed separately by cheapaimodel.
 #### Standard Compute
 
 Get your own key from [Standard Compute](https://standardcompute.com) and save it
