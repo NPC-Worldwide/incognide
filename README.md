@@ -101,6 +101,16 @@ Incognide after changing environment variables. Model Manager detects cheapaimod
 and uses `https://api.cheapaimodel.ai/v1` for its OpenAI-compatible API. Add the
 detected provider, then expand its card to load the models available to your key;
 `deepseek-v4-1-flash` is the default model. API usage is billed separately by cheapaimodel.
+#### Standard Compute
+
+Get your own key from [Standard Compute](https://standardcompute.com) and save it
+as `STANDARDCOMPUTE_API_KEY` in Global Settings or `~/.incogniderc`. Restart
+Incognide after changing environment variables. Model Manager detects Standard
+Compute and uses `https://api.stdcmpt.com/v1` for its OpenAI-compatible API. Add
+the detected provider, then expand its card to load the models available to your
+key. The default model `StandardCompute` sends each request to the cheapest
+enabled model that can handle it, with automatic fallback; you can also pin a
+specific model id from the list.
 
 #### OrcaRouter
 
@@ -118,6 +128,16 @@ Both paths produce the same durable API key, stored encrypted with Electron `saf
 **Endpoints.** Inference and model discovery use `https://api.orcarouter.ai/v1` with the OpenAI wire format. Authentication uses a different origin, `https://www.orcarouter.ai`, at `/auth` and `/api/v1/auth/keys`. Self-hosted deployments can set `ORCA_BASE_URL` (shared origin, `/v1` is appended for inference) or the explicit `ORCA_AUTH_BASE_URL` / `ORCA_API_BASE_URL` overrides, which take precedence. Remote origins must be HTTPS; plain HTTP is accepted only for loopback.
 
 **Models.** The model dropdown is populated from `GET /v1/models` with your own key, so it reflects what your workspace can actually call. Each AI input filters that catalog by capability: text chat keeps only models advertising a text endpoint, attaching an image narrows the list to models that declare image input, and embeddings, image generation, video and rerank use their own dedicated filters. A model that does not declare a required capability is never offered, and a selection that stops being compatible is cleared rather than kept. If discovery fails, a small verified fallback list is shown and labelled as degraded.
+
+#### Runcrate
+
+Get your own key from the [Runcrate dashboard](https://runcrate.ai/dashboard/api-keys)
+and save it as `RUNCRATE_API_KEY` in Global Settings or `~/.incogniderc`. Restart
+Incognide after changing environment variables. Model Manager detects Runcrate and
+uses `https://api.runcrate.ai/v1` for its OpenAI-compatible API to open-weight
+models. Add the detected provider, then expand its card to load the models available
+to your key; `deepseek-ai/DeepSeek-V4.1-Flash` is the default model. API usage is
+billed separately by Runcrate ([docs](https://runcrate.ai/docs/models/overview)).
 
 ### 4. Local setup for fine-tuning
 
