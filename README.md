@@ -93,6 +93,17 @@ after changing environment variables. Model Manager detects API Route and uses
 provider, then expand its card to load the models available to your key;
 `gpt-6.1-sol` is the default model. API usage is billed separately by API Route.
 
+#### Standard Compute
+
+Get your own key from [Standard Compute](https://standardcompute.com) and save it
+as `STANDARDCOMPUTE_API_KEY` in Global Settings or `~/.incogniderc`. Restart
+Incognide after changing environment variables. Model Manager detects Standard
+Compute and uses `https://api.stdcmpt.com/v1` for its OpenAI-compatible API. Add
+the detected provider, then expand its card to load the models available to your
+key. The default model `StandardCompute` sends each request to the cheapest
+enabled model that can handle it, with automatic fallback; you can also pin a
+specific model id from the list.
+
 #### OrcaRouter
 
 Try out almost 200 different models from 15 different providers with OrcaRouter using our [referral link](https://www.orcarouter.ai/ref/ref_900cb60d234853be6842)!

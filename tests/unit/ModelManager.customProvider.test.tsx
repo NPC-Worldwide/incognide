@@ -101,6 +101,26 @@ describe('ModelManager custom provider', () => {
     expect(await screen.findByText('gpt-6.1-sol')).toBeInTheDocument();
   });
 
+  it('discovers models for a configured Standard Compute provider', async () => {
+    const api = window.api as any;
+    api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{
+      name: 'standardcompute',
+      api_url: 'https://api.stdcmpt.com/v1',
+      api_key_var: 'STANDARDCOMPUTE_API_KEY',
+    }] } });
+    api.getProviderModels = vi.fn().mockResolvedValue({ models: [
+      { id: 'StandardCompute', name: 'StandardCompute', provider: 'standardcompute' },
+    ] });
+    const user = userEvent.setup();
+    render(<ModelManager />);
+    const label = await screen.findByText('Standard Compute');
+    await user.click(label.closest('button')!);
+    await waitFor(() => expect(api.getProviderModels).toHaveBeenCalledWith({
+      provider: 'standardcompute',
+      baseUrl: 'https://api.stdcmpt.com/v1',
+      apiKeyVar: 'STANDARDCOMPUTE_API_KEY',
+    }));
+    expect(await screen.findByText('StandardCompute')).toBeInTheDocument();
   it('discovers models for a configured Runcrate provider', async () => {
     const api = window.api as any;
     api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{

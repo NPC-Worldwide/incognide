@@ -27,6 +27,7 @@ export const API_PROVIDER_META: Record<string, { name: string; color: string; bg
     openrouter: { name: 'OpenRouter', color: 'text-violet-400', bgColor: 'bg-violet-600', docsUrl: 'https://openrouter.ai/models', defaultModel: 'openai/gpt-4o' },
     orcarouter: { name: 'OrcaRouter', color: 'text-cyan-300', bgColor: 'bg-cyan-600', docsUrl: 'https://www.orcarouter.ai', defaultModel: 'orcarouter/auto' },
     perplexity: { name: 'Perplexity', color: 'text-sky-400', bgColor: 'bg-sky-600', docsUrl: 'https://docs.perplexity.ai/', defaultModel: 'sonar-pro' },
+    standardcompute: { name: 'Standard Compute', color: 'text-lime-400', bgColor: 'bg-lime-600', docsUrl: 'https://standardcompute.com', defaultModel: 'StandardCompute' },
     runcrate: { name: 'Runcrate', color: 'text-blue-400', bgColor: 'bg-blue-700', docsUrl: 'https://runcrate.ai/docs/models/overview', defaultModel: 'deepseek-ai/DeepSeek-V4.1-Flash' },
     together: { name: 'Together', color: 'text-teal-400', bgColor: 'bg-teal-600', docsUrl: 'https://docs.together.ai/docs/models', defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
     xai: { name: 'xAI', color: 'text-gray-300', bgColor: 'bg-gray-600', docsUrl: 'https://docs.x.ai/', defaultModel: 'grok-3' },
