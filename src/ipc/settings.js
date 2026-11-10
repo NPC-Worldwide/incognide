@@ -2592,6 +2592,7 @@ function register(ctx) {
     },
     { provider: 'perplexity', envVar: 'PERPLEXITY_API_KEY', baseUrl: 'https://api.perplexity.ai', displayName: 'Perplexity' },
     { provider: 'replicate', envVar: 'REPLICATE_API_KEY', baseUrl: 'https://api.replicate.com/v1', displayName: 'Replicate' },
+    { provider: 'runcrate', envVar: 'RUNCRATE_API_KEY', baseUrl: 'https://api.runcrate.ai/v1', displayName: 'Runcrate' },
     { provider: 'sambanova', envVar: 'SAMBANOVA_API_KEY', baseUrl: 'https://api.sambanova.ai/v1', displayName: 'SambaNova' },
     { provider: 'standardcompute', envVar: 'STANDARDCOMPUTE_API_KEY', baseUrl: 'https://api.stdcmpt.com/v1', displayName: 'Standard Compute' },
     { provider: 'together', envVar: 'TOGETHER_API_KEY', baseUrl: 'https://api.together.xyz/v1', displayName: 'Together AI' },
