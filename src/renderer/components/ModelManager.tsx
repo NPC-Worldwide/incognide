@@ -32,6 +32,7 @@ export const API_PROVIDER_META: Record<string, { name: string; color: string; bg
     standardcompute: { name: 'Standard Compute', color: 'text-lime-400', bgColor: 'bg-lime-600', docsUrl: 'https://standardcompute.com', defaultModel: 'StandardCompute' },
     runcrate: { name: 'Runcrate', color: 'text-blue-400', bgColor: 'bg-blue-700', docsUrl: 'https://runcrate.ai/docs/models/overview', defaultModel: 'deepseek-ai/DeepSeek-V4.1-Flash' },
     together: { name: 'Together', color: 'text-teal-400', bgColor: 'bg-teal-600', docsUrl: 'https://docs.together.ai/docs/models', defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
+    uberllm: { name: 'UberLLM', color: 'text-indigo-300', bgColor: 'bg-indigo-700', docsUrl: 'https://uberllm.dev/docs/quickstart', defaultModel: 'deepseek/deepseek-v4-flash' },
     xai: { name: 'xAI', color: 'text-gray-300', bgColor: 'bg-gray-600', docsUrl: 'https://docs.x.ai/', defaultModel: 'grok-3' },
 };
 
