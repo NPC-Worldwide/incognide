@@ -24,7 +24,9 @@ interface BackendHealth {
 
 interface WorkspaceInfo {
   folderPath: string;
-  lastAccessed?: number;
+  lastAccessed?: number | null;
+  firstSeen?: number | null;
+  isOpen?: boolean;
 }
 
 interface WindowInfo {
@@ -164,9 +166,12 @@ const OverviewTab: React.FC<{ state: ManagerState; onRefresh: () => void; loadin
 
 const WorkspacesTab: React.FC<{ state: ManagerState; onRefresh: () => void; loading: boolean }> = ({ state, onRefresh, loading }) => {
   const [confirmForget, setConfirmForget] = useState<string | null>(null);
+  const [showClosed, setShowClosed] = useState(true);
 
   const openWorkspace = async (folderPath: string) => {
     await api.openNewWindow?.(folderPath);
+    // Reflect the newly opened window without waiting for the next poll.
+    setTimeout(() => onRefresh(), 600);
   };
 
   const forgetWorkspace = (folderPath: string) => {
@@ -175,10 +180,23 @@ const WorkspacesTab: React.FC<{ state: ManagerState; onRefresh: () => void; load
     onRefresh();
   };
 
+  const workspaceIsOpen = (ws: WorkspaceInfo) => (
+    typeof ws.isOpen === 'boolean'
+      ? ws.isOpen
+      : (state.windows || []).some((w) => w.folderPath && w.folderPath.replace(/\/+$/, '') === ws.folderPath.replace(/\/+$/, ''))
+  );
+
+  const allWorkspaces = state.workspaces || [];
+  const openCount = allWorkspaces.filter(workspaceIsOpen).length;
+  const closedCount = allWorkspaces.length - openCount;
+  const visibleWorkspaces = showClosed ? allWorkspaces : allWorkspaces.filter(workspaceIsOpen);
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs theme-text-muted">{state.workspaces?.length ?? 0} saved workspace{state.workspaces?.length === 1 ? '' : 's'} · {state.windows?.length ?? 0} open</div>
+        <div className="text-xs theme-text-muted">
+          {allWorkspaces.length} known workspace{allWorkspaces.length === 1 ? '' : 's'} · {openCount} open · {closedCount} closed
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => api.reopenClosedWindows?.()}
@@ -195,23 +213,43 @@ const WorkspacesTab: React.FC<{ state: ManagerState; onRefresh: () => void; load
           </button>
         </div>
       </div>
-      {(state.workspaces?.length ?? 0) === 0 && (
+      {allWorkspaces.length === 0 && (
         <div className="theme-bg-secondary border theme-border rounded p-6 text-center text-sm theme-text-muted">
           No saved workspaces.
         </div>
       )}
-      {[...(state.workspaces || [])].sort((a, b) =>
-        (a.folderPath.split('/').pop() || '').localeCompare(b.folderPath.split('/').pop() || '')
-      ).map((ws) => {
-        const isOpen = (state.windows || []).some((w) => w.folderPath && w.folderPath.replace(/\/+$/, '') === ws.folderPath.replace(/\/+$/, ''));
+      {allWorkspaces.length > 0 && (
+        <button
+          onClick={() => setShowClosed((v) => !v)}
+          className="text-[10px] px-2 py-1 rounded border theme-border theme-text-muted hover:theme-bg-tertiary"
+        >
+          {showClosed ? 'Hide closed workspaces' : `Show ${closedCount} closed workspace${closedCount === 1 ? '' : 's'}`}
+        </button>
+      )}
+      {visibleWorkspaces.map((ws) => {
+        const isOpen = workspaceIsOpen(ws);
         return (
-          <div key={ws.folderPath} className="theme-bg-secondary border theme-border rounded p-3 flex items-center justify-between gap-3">
+          <div
+            key={ws.folderPath}
+            className={classNames(
+              'theme-bg-secondary border theme-border rounded p-3 flex items-center justify-between gap-3',
+              !isOpen && 'opacity-60'
+            )}
+          >
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium theme-text-primary truncate">{ws.folderPath.split('/').pop() || 'Untitled'}</div>
+              <div className="text-sm font-medium theme-text-primary truncate flex items-center gap-1.5">
+                {ws.folderPath.split('/').pop() || 'Untitled'}
+                <span className={classNames(
+                  'text-[9px] px-1.5 py-0.5 rounded font-normal',
+                  isOpen ? 'bg-emerald-600/20 text-emerald-300' : 'bg-gray-600/30 theme-text-muted'
+                )}>
+                  {isOpen ? 'open' : 'closed'}
+                </span>
+              </div>
               <div className="text-xs theme-text-muted truncate">{ws.folderPath}</div>
-              {ws.lastAccessed && (
+              {ws.lastAccessed ? (
                 <div className="text-[10px] theme-text-muted mt-0.5">Last opened {formatDate(new Date(ws.lastAccessed).toISOString())}</div>
-              )}
+              ) : null}
             </div>
             <div className="flex items-center gap-1">
               {!isOpen && (

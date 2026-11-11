@@ -167,6 +167,9 @@ loadShellEnv();
 const RECENT_PATHS_FILE = path.join(INCOGNIDE_HOME, 'recent_paths.json');
 const WINDOW_STATE_FILE = path.join(INCOGNIDE_HOME, 'window_state.json');
 const OPEN_WORKSPACES_FILE = path.join(INCOGNIDE_HOME, 'open_workspaces.json');
+// Every workspace ever opened, keyed by path, so closed ones remain discoverable.
+// Removed only on an explicit "forget" action.
+const WORKSPACE_HISTORY_FILE = path.join(INCOGNIDE_HOME, 'workspace_history.json');
 
 function loadRecentPaths() {
   try {
@@ -243,6 +246,66 @@ function saveOpenWorkspaces(paths) {
   }
 }
 
+function loadWorkspaceHistory() {
+  try {
+    if (fs.existsSync(WORKSPACE_HISTORY_FILE)) {
+      const data = JSON.parse(fs.readFileSync(WORKSPACE_HISTORY_FILE, 'utf-8'));
+      if (Array.isArray(data?.workspaces)) {
+        return data.workspaces.filter((w) => w && typeof w.path === 'string');
+      }
+    }
+  } catch (e) {
+    console.error('[WORKSPACE_HISTORY] Error loading:', e.message);
+  }
+  return [];
+}
+
+function saveWorkspaceHistory(workspaces) {
+  try {
+    const byPath = new Map();
+    for (const w of workspaces) {
+      if (!w || typeof w.path !== 'string') continue;
+      const normalized = w.path.replace(/\/+$/, '');
+      const prev = byPath.get(normalized);
+      const lastAccessed = Math.max(prev?.lastAccessed || 0, w.lastAccessed || 0);
+      byPath.set(normalized, {
+        path: normalized,
+        lastAccessed: lastAccessed || Date.now(),
+        firstSeen: prev?.firstSeen || w.firstSeen || Date.now(),
+      });
+    }
+    const sorted = Array.from(byPath.values()).sort((a, b) => b.lastAccessed - a.lastAccessed);
+    fs.writeFileSync(WORKSPACE_HISTORY_FILE, JSON.stringify({ workspaces: sorted }, null, 2));
+  } catch (e) {
+    console.error('[WORKSPACE_HISTORY] Error saving:', e.message);
+  }
+}
+
+// Record a workspace in the durable history. Called on open and on access, never
+// on close, so closed workspaces stay listed.
+function recordWorkspaceHistory(wsPath, accessedAt) {
+  if (!wsPath || typeof wsPath !== 'string') return;
+  const normalized = wsPath.replace(/\/+$/, '');
+  const history = loadWorkspaceHistory();
+  const existing = history.find((w) => w.path.replace(/\/+$/, '') === normalized);
+  if (existing) {
+    existing.lastAccessed = accessedAt || Date.now();
+  } else {
+    history.push({ path: normalized, lastAccessed: accessedAt || Date.now(), firstSeen: Date.now() });
+  }
+  saveWorkspaceHistory(history);
+}
+
+function forgetWorkspaceFromHistory(wsPath) {
+  if (!wsPath || typeof wsPath !== 'string') return false;
+  const normalized = wsPath.replace(/\/+$/, '');
+  const history = loadWorkspaceHistory();
+  const kept = history.filter((w) => w.path.replace(/\/+$/, '') !== normalized);
+  if (kept.length === history.length) return false;
+  saveWorkspaceHistory(kept);
+  return true;
+}
+
 function addOpenWorkspace(wsPath) {
   if (!wsPath || typeof wsPath !== 'string') return;
   const normalized = wsPath.replace(/\/+$/, '');
@@ -251,6 +314,7 @@ function addOpenWorkspace(wsPath) {
     paths.push(normalized);
     saveOpenWorkspaces(paths);
   }
+  recordWorkspaceHistory(normalized);
 }
 
 function removeOpenWorkspace(wsPath) {
@@ -1448,6 +1512,7 @@ ipcMain.on('set-workspace-path', (event, workspacePath) => {
     }
     workspacePathByWindow.set(windowId, normalized);
     addOpenWorkspace(normalized);
+    recordWorkspaceHistory(normalized);
     log(`[DOWNLOAD] Workspace path for window ${windowId}: ${normalized}`);
   }
 });
@@ -3536,21 +3601,60 @@ ipcMain.handle('report-saved-workspaces', async (_event, paths) => {
 });
 
 ipcMain.handle('reopen-closed-windows', async () => {
-  const restored = await restoreOpenWorkspaces();
-  return { success: true, restored };
+  const alreadyOpen = new Set(
+    Array.from(workspacePathByWindow.values()).map((p) => p.replace(/\/+$/, ''))
+  );
+  const targets = loadWorkspaceHistory()
+    .map((w) => w.path.replace(/\/+$/, ''))
+    .filter((p) => !alreadyOpen.has(p));
+
+  let opened = 0;
+  for (const wsPath of targets) {
+    try {
+      const stat = await fsPromises.stat(wsPath);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    createWindow({ folder: wsPath });
+    alreadyOpen.add(wsPath);
+    opened += 1;
+  }
+  log(`[OPEN_WORKSPACES] Reopened ${opened} closed workspace(s) from history`);
+  return { success: true, restored: opened };
 });
 
 ipcMain.handle('get-saved-workspaces', async () => {
   try {
-    const paths = loadOpenWorkspaces();
-    const statPromises = paths.map(async (folderPath) => {
-      let lastAccessed = null;
-      try {
-        const statePath = path.join(INCOGNIDE_HOME, 'window_state.json');
-      } catch {}
-      return { folderPath, lastAccessed };
-    });
-    return await Promise.all(statPromises);
+    const openPaths = new Set(loadOpenWorkspaces().map((p) => p.replace(/\/+$/, '')));
+    const history = loadWorkspaceHistory();
+
+    // Union of history and currently-open paths, so a workspace opened before the
+    // history file existed still shows up.
+    const byPath = new Map();
+    for (const entry of history) {
+      const normalized = entry.path.replace(/\/+$/, '');
+      byPath.set(normalized, {
+        folderPath: normalized,
+        lastAccessed: entry.lastAccessed || null,
+        firstSeen: entry.firstSeen || null,
+      });
+    }
+    for (const openPath of openPaths) {
+      const normalized = openPath.replace(/\/+$/, '');
+      if (!byPath.has(normalized)) {
+        byPath.set(normalized, { folderPath: normalized, lastAccessed: null, firstSeen: null });
+      }
+    }
+
+    const entries = Array.from(byPath.values()).map((entry) => ({
+      ...entry,
+      isOpen: openPaths.has(entry.folderPath),
+    }));
+
+    // Most recently accessed first; never-opened-last as a fallback.
+    entries.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+    return entries;
   } catch (err) {
     log(`[WORKSPACES] Error listing saved workspaces: ${err.message}`);
     return [];
@@ -3561,6 +3665,8 @@ ipcMain.handle('forget-workspace', async (_event, folderPath) => {
   try {
     if (!folderPath || typeof folderPath !== 'string') return { success: false, error: 'invalid path' };
     removeOpenWorkspace(folderPath);
+    // An explicit forget is the only thing that drops a workspace from history.
+    forgetWorkspaceFromHistory(folderPath);
     return { success: true };
   } catch (err) {
     log(`[WORKSPACES] Error forgetting workspace: ${err.message}`);
