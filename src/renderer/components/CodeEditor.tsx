@@ -400,7 +400,7 @@ const editorThemeLight = EditorView.theme({
     },
 });
 
-const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMenu, onSelect, onSendToTerminal, savedEditorState, onEditorStateChange, keybindMode, appendKeystrokes, flushAll }) => {
+const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMenu, onSelect, onSendToTerminal, savedEditorState, onEditorStateChange, keybindMode, appendKeystrokes, flushAll, onCursorChange }) => {
     const editorRef = useRef(null);
 
     const onSelectRef = useRef(onSelect);
@@ -408,6 +408,7 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
     const onSendToTerminalRef = useRef(onSendToTerminal);
     const onSaveRef = useRef(onSave);
     const onEditorStateChangeRef = useRef(onEditorStateChange);
+    const onCursorChangeRef = useRef(onCursorChange);
     const appendKeystrokesRef = useRef(appendKeystrokes);
     const flushAllRef = useRef(flushAll);
     onSelectRef.current = onSelect;
@@ -415,6 +416,7 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
     onSendToTerminalRef.current = onSendToTerminal;
     onSaveRef.current = onSave;
     onEditorStateChangeRef.current = onEditorStateChange;
+    onCursorChangeRef.current = onCursorChange;
     appendKeystrokesRef.current = appendKeystrokes;
     flushAllRef.current = flushAll;
 
@@ -719,6 +721,19 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
             const { from, to } = viewUpdate.state.selection.main;
             onSelectRef.current(from, to);
         }
+        if ((viewUpdate.selectionSet || viewUpdate.docChanged) && onCursorChangeRef.current) {
+            const state = viewUpdate.state;
+            const head = state.selection.main.head;
+            const line = state.doc.lineAt(head);
+            const selectedChars = Math.abs(state.selection.main.to - state.selection.main.from);
+            onCursorChangeRef.current({
+                line: line.number,
+                col: head - line.from + 1,
+                selectedChars,
+                totalLines: state.doc.lines,
+                totalChars: state.doc.length,
+            });
+        }
     }, []);
 
     const handleContextMenu = useCallback((event: React.MouseEvent) => {
@@ -840,6 +855,9 @@ const CodeEditorPane = ({
     const [showKeybindGuide, setShowKeybindGuide] = useState(false);
     const [diskChangeContent, setDiskChangeContent] = useState<string | null>(null);
     const [showModeDropdown, setShowModeDropdown] = useState(false);
+    const [cursorInfo, setCursorInfo] = useState<{ line: number; col: number; selectedChars: number; totalLines: number; totalChars: number } | null>(null);
+    const [fileStats, setFileStats] = useState<{ mtime?: number; size?: number } | null>(null);
+    const [fileGitInfo, setFileGitInfo] = useState<{ shortHash?: string; hash?: string; date?: string; author?: string; subject?: string } | null>(null);
     const [diskConflictModal, setDiskConflictModal] = useState<{ isOpen: boolean; diskMtime: number | null; diskContent: string | null }>({ isOpen: false, diskMtime: null, diskContent: null });
     const diskMtimeRef = useRef<number | null>(null);
     const diskContentRef = useRef<string | null>(null);
@@ -1141,6 +1159,56 @@ const CodeEditorPane = ({
         };
     }, [nodeId, contentDataRef, setRootLayoutNode, updateDiskState]);
 
+    // File metadata for the status strip: mtime + the last commit that touched
+    // the file. Both are cheap; mtime is refreshed whenever the content changes.
+    useEffect(() => {
+        if (!filePath || paneData?.isUntitled) {
+            setFileStats(null);
+            setFileGitInfo(null);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const stats = await (window as any).api?.getFileStats?.(filePath);
+                if (!cancelled && stats) {
+                    setFileStats({ mtime: stats.mtimeMs || (stats.mtime ? new Date(stats.mtime).getTime() : undefined), size: stats.size });
+                }
+            } catch {}
+
+            if (!currentPath) {
+                if (!cancelled) setFileGitInfo(null);
+                return;
+            }
+            try {
+                // Mirror the blame path: repo root is the workspace, file arg is relative.
+                const relativePath = filePath.startsWith(currentPath)
+                    ? filePath.slice(currentPath.length + 1)
+                    : filePath;
+                const info = await (window as any).api?.gitFileLastCommit?.(currentPath, relativePath);
+                if (!cancelled) {
+                    setFileGitInfo(info?.success && info?.commit ? info.commit : null);
+                }
+            } catch {
+                if (!cancelled) setFileGitInfo(null);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [filePath, fileContent, currentPath, paneData?.isUntitled]);
+
+    const fileModifiedLabel = React.useMemo(() => {
+        if (!fileStats?.mtime) return null;
+        const diff = Date.now() - fileStats.mtime;
+        const mins = Math.round(diff / 60000);
+        if (mins < 1) return 'modified just now';
+        if (mins < 60) return `modified ${mins}m ago`;
+        const hours = Math.round(mins / 60);
+        if (hours < 24) return `modified ${hours}h ago`;
+        const days = Math.round(hours / 24);
+        if (days < 30) return `modified ${days}d ago`;
+        return `modified ${new Date(fileStats.mtime).toLocaleDateString()}`;
+    }, [fileStats]);
+
     const onEditorContextMenu = useCallback((e, selection) => {
         e.preventDefault();
         e.stopPropagation();
@@ -1208,8 +1276,10 @@ const CodeEditorPane = ({
                     </div>
                 )}
 
-                <div className="flex-1 overflow-hidden min-h-0 relative">
+                <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
+                  <div className="flex-1 min-h-0 relative">
                     <CodeMirrorEditor
+                        onCursorChange={setCursorInfo}
                         appendKeystrokes={appendKeystrokes}
                         flushAll={flushAll}
                         value={fileContent || ''}
@@ -1223,14 +1293,41 @@ const CodeEditorPane = ({
                         savedEditorState={paneData?._scrollTopPos != null ? { scrollTopPos: paneData._scrollTopPos } : undefined}
                         onEditorStateChange={(state) => { if (paneData) { paneData._scrollTopPos = state.scrollTopPos; } }}
                     />
-                    <div className="absolute bottom-1 right-2 z-10 flex items-center gap-2">
-                        <span className="text-[10px] text-gray-500 font-mono select-none">
-                            {(fileContent || '').split('\n').length} lines
+                  </div>
+                  <div className="flex-shrink-0 relative">
+                    <div className="flex items-center justify-between gap-2 px-2 py-1 border-t border-white/10 bg-[#181825]/95 text-[10px] font-mono text-gray-400 select-none">
+                      <div className="flex items-center gap-3 min-w-0 overflow-hidden">
+                        <span className="truncate" title={filePath || ''}>
+                            {filePath ? getFileName(filePath) : 'untitled'}
                         </span>
+                        {fileGitInfo?.shortHash && (
+                            <span
+                                className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 shrink-0"
+                                title={`${fileGitInfo.shortHash} · ${fileGitInfo.author || ''} · ${fileGitInfo.subject || ''}`}
+                            >
+                                {fileGitInfo.shortHash}
+                            </span>
+                        )}
+                        {fileModifiedLabel && (
+                            <span className="theme-text-muted shrink-0" title={fileStats?.mtime ? new Date(fileStats.mtime).toLocaleString() : ''}>
+                                {fileModifiedLabel}
+                            </span>
+                        )}
+                        <span className="shrink-0">
+                            {cursorInfo ? `Ln ${cursorInfo.line}, Col ${cursorInfo.col}` : 'Ln 1, Col 1'}
+                        </span>
+                        <span className="theme-text-muted shrink-0">
+                            {cursorInfo ? `${cursorInfo.totalLines} lines` : `${(fileContent || '').split('\n').length} lines`}
+                        </span>
+                        {cursorInfo?.selectedChars ? (
+                            <span className="text-purple-300 shrink-0">{cursorInfo.selectedChars} sel</span>
+                        ) : null}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
                         <div className="relative">
                             <button
                                 onClick={() => setShowModeDropdown(prev => !prev)}
-                                className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border bg-black/40 text-gray-300 border-white/10 hover:bg-black/60 hover:text-gray-100 cursor-pointer transition-colors"
+                                className="flex items-center gap-1 px-2 py-0.5 rounded border bg-black/40 text-gray-300 border-white/10 hover:bg-black/60 hover:text-gray-100 cursor-pointer transition-colors"
                                 title="Click to switch keybinding mode. Ctrl+Shift+Space to cycle."
                             >
                                 {keybindMode === 'default' ? 'Default' : keybindMode.charAt(0).toUpperCase() + keybindMode.slice(1)}
@@ -1283,9 +1380,10 @@ const CodeEditorPane = ({
                         >
                             <HelpCircle size={12} />
                         </button>
+                      </div>
                     </div>
                     {showKeybindGuide && (
-                        <div className="absolute bottom-7 left-0 right-0 z-20 border-t border-white/10 bg-[#181825]/95 backdrop-blur text-[11px] text-gray-300">
+                        <div className="absolute bottom-full left-0 right-0 z-20 border-t border-white/10 bg-[#181825]/95 backdrop-blur text-[11px] text-gray-300">
                             <div className="flex items-center justify-between px-3 py-1 border-b border-white/10 bg-black/20">
                                 <span className="font-medium text-gray-200 text-xs">
                                     {keybindMode === 'default' ? 'Default' : keybindMode === 'vim' ? 'Vim' : keybindMode === 'emacs' ? 'Emacs' : 'Nano'} Keybindings
@@ -1422,6 +1520,7 @@ const CodeEditorPane = ({
                             </div>
                         </div>
                     )}
+                  </div>
                 </div>
             </div>
 

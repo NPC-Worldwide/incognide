@@ -176,6 +176,7 @@ readPdfText: (filePath) =>
     gitShowCommit: (repoPath, commitHash) => ipcRenderer.invoke('gitShowCommit', repoPath, commitHash),
     gitStash: (repoPath, action, message) => ipcRenderer.invoke('gitStash', repoPath, action, message),
     gitShowFile: (repoPath, filePath, ref) => ipcRenderer.invoke('gitShowFile', repoPath, filePath, ref),
+    gitFileLastCommit: (repoPath, filePath) => ipcRenderer.invoke('gitFileLastCommit', repoPath, filePath),
     gitDiscardFile: (repoPath, filePath) => ipcRenderer.invoke('gitDiscardFile', repoPath, filePath),
     gitRmUntracked: (repoPath, filePath) => ipcRenderer.invoke('gitRmUntracked', repoPath, filePath),
     gitAcceptOurs: (repoPath, filePath) => ipcRenderer.invoke('gitAcceptOurs', repoPath, filePath),
