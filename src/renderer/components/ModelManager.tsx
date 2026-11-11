@@ -84,7 +84,7 @@ const ModelManager = ({ onStartChat, onOpenModelsYaml }: { onStartChat?: (model:
     });
     const [ggufDirectory, setGgufDirectory] = useState('');
     const [scannedDirectories, setScannedDirectories] = useState<string[]>([]);
-    const [pullModelName, setPullModelName] = useState('qwen3.5:4b');
+    const [pullModelName, setPullModelName] = useState('');
     const [pullProgress, setPullProgress] = useState<any>(null);
     const [isPulling, setIsPulling] = useState(false);
     const [isDeleting, setIsDeleting] = useState<any>(null);
@@ -208,21 +208,6 @@ const ModelManager = ({ onStartChat, onOpenModelsYaml }: { onStartChat?: (model:
         'mistral', 'together', 'xai', 'perplexity', 'ollama', 'lmstudio', 'llamacpp',
     ]), []);
 
-    const DEFAULT_MODELS: Record<string, string> = {
-        openai: 'gpt-4o',
-        anthropic: 'claude-sonnet-4',
-        gemini: 'gemini-2.5-flash',
-        openrouter: 'openai/gpt-4o',
-        deepseek: 'deepseek-chat',
-        groq: 'llama-3.3-70b-versatile',
-        moonshot: 'moonshot-v1-8k',
-        mistral: 'mistral-large-latest',
-        together: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
-        xai: 'grok-3',
-        perplexity: 'sonar-pro',
-        ollama: 'qwen3.5:4b',
-    };
-
     const handleAddDetectedToUserModels = async (p: any) => {
         try {
             const isKnown = KNOWN_PROVIDERS.has(p.key);
@@ -230,17 +215,32 @@ const ModelManager = ({ onStartChat, onOpenModelsYaml }: { onStartChat?: (model:
                 ...(p.baseUrl ? { apiUrl: p.baseUrl } : {}),
                 ...(p.apiKeyVar ? { apiKeyVar: p.apiKeyVar } : {}),
             };
+            // Always discover the real model list. An empty result is a valid
+            // answer: models.yaml providers with an empty `models` array are
+            // re-scanned at runtime by the model selector.
+            const normalize = (list: any): string[] =>
+                (Array.isArray(list) ? list : [])
+                    .map((m: any) => (typeof m === 'string' ? m : (m?.name || m?.id || m?.filename || m?.value)))
+                    .filter(Boolean);
             let models: string[] = [];
             if (p.local) {
                 if (p.key === 'ollama') {
                     const result = await window.api.getLocalOllamaModels();
-                    models = (result?.models || []).map((m: any) => m.name || m.id || m);
+                    models = normalize(result?.models);
                 } else {
                     const result = await (window as any).api.scanLocalModels?.(p.key);
-                    models = (result?.models || []).map((m: any) => m.name || m.id || m.filename || m);
+                    models = normalize(result?.models);
                 }
-            } else if (isKnown) {
-                models = DEFAULT_MODELS[p.key] ? [DEFAULT_MODELS[p.key]] : [];
+            }
+            if (models.length === 0) {
+                try {
+                    const result = await (window as any).api.getProviderModels?.({
+                        provider: p.key,
+                        baseUrl: p.baseUrl,
+                        apiKeyVar: p.apiKeyVar,
+                    });
+                    models = normalize(result?.models);
+                } catch {}
             }
             await (window as any).api.userModelsUpdate({
                 providerName: p.key,

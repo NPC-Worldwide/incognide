@@ -517,7 +517,73 @@ function register(ctx) {
       log('[getAvailableModels] Error loading custom providers:', cpErr.message);
     }
 
-    const allModels = [...backendModels, ...customProviderModels];
+    // Merge providers the user configured in ~/.incognide/models.yaml. The
+    // Python /api/models endpoint derives its list purely from team .ctx/.npc
+    // config, so without this the team/ctx model dropdowns never reflect a
+    // provider added through the selector.
+    const userConfigModels = [];
+    try {
+      const userModelsRaw = await fsPromises
+        .readFile(path.join(INCOGNIDE_HOME, 'models.yaml'), 'utf8')
+        .catch(() => null);
+      if (userModelsRaw) {
+        const parsedUser = yaml.load(userModelsRaw) || {};
+        const userProviders = Array.isArray(parsedUser.providers) ? parsedUser.providers : [];
+        for (const prov of userProviders) {
+          const pKey = String(prov?.name || prov?.provider || '').trim();
+          if (!pKey) continue;
+          const listed = Array.isArray(prov.models) ? prov.models.filter(Boolean) : [];
+          if (listed.length > 0) {
+            for (const m of listed) {
+              userConfigModels.push({
+                value: String(m),
+                display_name: `${m} | ${pKey}`,
+                provider: pKey,
+                base_url: prov.api_url || undefined,
+                api_key_var: prov.api_key_var || undefined,
+              });
+            }
+            continue;
+          }
+          // No explicit models: discover them, but never invent a name.
+          try {
+            const discovered = await fetchProviderModels({
+              provider: pKey,
+              baseUrl: prov.api_url,
+              apiKeyVar: prov.api_key_var,
+            });
+            for (const m of (discovered.models || [])) {
+              const id = m.id || m.name;
+              if (!id) continue;
+              userConfigModels.push({
+                value: id,
+                display_name: `${id} | ${pKey}`,
+                provider: pKey,
+                base_url: prov.api_url || undefined,
+                api_key_var: prov.api_key_var || undefined,
+                context_window: m.context_length ?? null,
+              });
+            }
+          } catch (provErr) {
+            log(`[getAvailableModels] scan failed for user provider ${pKey}:`, provErr.message);
+          }
+        }
+      }
+    } catch (userErr) {
+      log('[getAvailableModels] Error loading user models.yaml:', userErr.message);
+    }
+
+    // Dedupe on (provider, value); backend entries win so team-configured
+    // context windows are preserved.
+    const allModels = [];
+    const seenModelKeys = new Set();
+    for (const m of [...backendModels, ...userConfigModels, ...customProviderModels]) {
+      if (!m || !m.value) continue;
+      const key = `${String(m.provider || '').toLowerCase()}::${m.value}`;
+      if (seenModelKeys.has(key)) continue;
+      seenModelKeys.add(key);
+      allModels.push(m);
+    }
 
     if (allModels.length === 0 && backendError) {
         return { models: [], error: backendError };
