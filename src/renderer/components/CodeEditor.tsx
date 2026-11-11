@@ -857,7 +857,10 @@ const CodeEditorPane = ({
     const [showModeDropdown, setShowModeDropdown] = useState(false);
     const [cursorInfo, setCursorInfo] = useState<{ line: number; col: number; selectedChars: number; totalLines: number; totalChars: number } | null>(null);
     const [fileStats, setFileStats] = useState<{ mtime?: number; size?: number } | null>(null);
-    const [fileGitInfo, setFileGitInfo] = useState<{ shortHash?: string; hash?: string; date?: string; author?: string; subject?: string } | null>(null);
+    const [fileHash, setFileHash] = useState<string | null>(null);
+    // Bumped after a successful write/reload so the hash + mtime recompute even
+    // though `fileContent` itself did not change (the buffer already held the text).
+    const [fileMetaTick, setFileMetaTick] = useState(0);
     const [diskConflictModal, setDiskConflictModal] = useState<{ isOpen: boolean; diskMtime: number | null; diskContent: string | null }>({ isOpen: false, diskMtime: null, diskContent: null });
     const diskMtimeRef = useRef<number | null>(null);
     const diskContentRef = useRef<string | null>(null);
@@ -977,6 +980,7 @@ const CodeEditorPane = ({
                     currentPaneData.contentId = filepath;
                     currentPaneData.isUntitled = false;
                     currentPaneData.fileChanged = false;
+                    setFileMetaTick(t => t + 1);
                     setRootLayoutNode(p => ({ ...p }));
                 }
             });
@@ -1004,6 +1008,7 @@ const CodeEditorPane = ({
         currentPaneData.fileChanged = false;
         const newStats = await checkDiskState(currentPaneData.contentId);
         updateDiskState(currentPaneData.fileContent || '', newStats.mtime);
+        setFileMetaTick(t => t + 1);
         setRootLayoutNode(p => ({ ...p }));
         setTimeout(() => { currentPaneData._selfWriting = false; }, 4000);
     }, [nodeId, contentDataRef, setRootLayoutNode, setPromptModal, currentPath, checkDiskState, updateDiskState]);
@@ -1019,11 +1024,13 @@ const CodeEditorPane = ({
             const newStats = await checkDiskState(currentPaneData.contentId);
             updateDiskState(currentPaneData.fileContent || '', newStats.mtime);
             setDiskChangeContent(null);
+            setFileMetaTick(t => t + 1);
             setRootLayoutNode(p => ({ ...p }));
             setTimeout(() => { currentPaneData._selfWriting = false; }, 4000);
         } else {
             if (diskConflictModal.diskContent != null) {
                 updateDiskState(diskConflictModal.diskContent, diskConflictModal.diskMtime || 0);
+                setFileMetaTick(t => t + 1);
             } else {
                 pendingDiskConflictRef.current = true;
             }
@@ -1058,6 +1065,7 @@ const CodeEditorPane = ({
                 pd.fileChanged = false;
                 const newStats = await checkDiskState(pd.contentId);
                 updateDiskState(pd.fileContent || '', newStats.mtime);
+                setFileMetaTick(t => t + 1);
                 setRootLayoutNode(p => ({ ...p }));
                 setTimeout(() => { pd._selfWriting = false; }, 4000);
             } catch (e) {
@@ -1093,6 +1101,7 @@ const CodeEditorPane = ({
                 updateDiskState(diskContent, stats?.mtimeMs || 0);
                 pendingDiskConflictRef.current = false;
                 setDiskChangeContent(null);
+                setFileMetaTick(t => t + 1);
                 setRootLayoutNode(p => ({ ...p }));
             }
         } catch (e) {
@@ -1159,12 +1168,14 @@ const CodeEditorPane = ({
         };
     }, [nodeId, contentDataRef, setRootLayoutNode, updateDiskState]);
 
-    // File metadata for the status strip: mtime + the last commit that touched
-    // the file. Both are cheap; mtime is refreshed whenever the content changes.
+    // File metadata for the status strip. The "hash" is a content fingerprint of
+    // the file itself (SHA-256 of the bytes, first 8 hex chars), so it identifies
+    // the version of the file you are looking at. It is independent of git and
+    // works for any file anywhere on disk.
     useEffect(() => {
-        if (!filePath || paneData?.isUntitled) {
+        if (!filePath) {
             setFileStats(null);
-            setFileGitInfo(null);
+            setFileHash(null);
             return;
         }
         let cancelled = false;
@@ -1172,29 +1183,40 @@ const CodeEditorPane = ({
             try {
                 const stats = await (window as any).api?.getFileStats?.(filePath);
                 if (!cancelled && stats) {
-                    setFileStats({ mtime: stats.mtimeMs || (stats.mtime ? new Date(stats.mtime).getTime() : undefined), size: stats.size });
+                    setFileStats({
+                        mtime: stats.mtimeMs || (stats.mtime ? new Date(stats.mtime).getTime() : undefined),
+                        size: stats.size,
+                    });
                 }
             } catch {}
 
-            if (!currentPath) {
-                if (!cancelled) setFileGitInfo(null);
+            // Prefer the on-disk bytes, so the hash reflects what was loaded rather
+            // than unsaved editor state. Fall back to the in-memory text for new
+            // (untitled) buffers.
+            let bytes = null;
+            try {
+                bytes = await (window as any).api?.readFileBuffer?.(filePath);
+            } catch {}
+            if (!bytes || !bytes.length) {
+                const text = fileContent;
+                if (text) bytes = new TextEncoder().encode(text);
+            }
+            if (!bytes || !bytes.length) {
+                if (!cancelled) setFileHash(null);
                 return;
             }
             try {
-                // Mirror the blame path: repo root is the workspace, file arg is relative.
-                const relativePath = filePath.startsWith(currentPath)
-                    ? filePath.slice(currentPath.length + 1)
-                    : filePath;
-                const info = await (window as any).api?.gitFileLastCommit?.(currentPath, relativePath);
-                if (!cancelled) {
-                    setFileGitInfo(info?.success && info?.commit ? info.commit : null);
-                }
+                const digest = await crypto.subtle.digest('SHA-256', bytes);
+                const hex = Array.from(new Uint8Array(digest))
+                    .map((b) => b.toString(16).padStart(2, '0'))
+                    .join('');
+                if (!cancelled) setFileHash(hex.slice(0, 8));
             } catch {
-                if (!cancelled) setFileGitInfo(null);
+                if (!cancelled) setFileHash(null);
             }
         })();
         return () => { cancelled = true; };
-    }, [filePath, fileContent, currentPath, paneData?.isUntitled]);
+    }, [filePath, fileContent, fileMetaTick]);
 
     const fileModifiedLabel = React.useMemo(() => {
         if (!fileStats?.mtime) return null;
@@ -1300,12 +1322,12 @@ const CodeEditorPane = ({
                         <span className="truncate" title={filePath || ''}>
                             {filePath ? getFileName(filePath) : 'untitled'}
                         </span>
-                        {fileGitInfo?.shortHash && (
+                        {fileHash && (
                             <span
-                                className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 shrink-0"
-                                title={`${fileGitInfo.shortHash} · ${fileGitInfo.author || ''} · ${fileGitInfo.subject || ''}`}
+                                className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 shrink-0 cursor-help"
+                                title={`Content hash (SHA-256, first 8): ${fileHash}${fileStats?.size ? ` · ${fileStats.size} bytes` : ''}`}
                             >
-                                {fileGitInfo.shortHash}
+                                #{fileHash}
                             </span>
                         )}
                         {fileModifiedLabel && (

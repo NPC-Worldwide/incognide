@@ -3390,6 +3390,56 @@ const MarkdownPreviewContent: React.FC<{ filePath: string }> = ({ filePath }) =>
     const [content, setContent] = useState<string>('');
     const [loading, setLoading] = useState(true);
     const containerRef = useRef<HTMLDivElement | null>(null);
+    const [mdHash, setMdHash] = useState<string | null>(null);
+    const [mdStats, setMdStats] = useState<{ mtime?: number; size?: number } | null>(null);
+
+    useEffect(() => {
+        if (!filePath) {
+            setMdHash(null);
+            setMdStats(null);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const stats = await (window as any).api?.getFileStats?.(filePath);
+                if (!cancelled && stats) {
+                    setMdStats({
+                        mtime: stats.mtimeMs || (stats.mtime ? new Date(stats.mtime).getTime() : undefined),
+                        size: stats.size,
+                    });
+                }
+            } catch {}
+            try {
+                const bytes = await (window as any).api?.readFileBuffer?.(filePath);
+                if (!bytes || !bytes.length) {
+                    if (!cancelled) setMdHash(null);
+                    return;
+                }
+                const digest = await crypto.subtle.digest('SHA-256', bytes);
+                const hex = Array.from(new Uint8Array(digest))
+                    .map((b) => b.toString(16).padStart(2, '0'))
+                    .join('');
+                if (!cancelled) setMdHash(hex.slice(0, 8));
+            } catch {
+                if (!cancelled) setMdHash(null);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [filePath, content]);
+
+    const mdModifiedLabel = React.useMemo(() => {
+        if (!mdStats?.mtime) return null;
+        const diff = Date.now() - mdStats.mtime;
+        const mins = Math.round(diff / 60000);
+        if (mins < 1) return 'modified just now';
+        if (mins < 60) return `modified ${mins}m ago`;
+        const hours = Math.round(mins / 60);
+        if (hours < 24) return `modified ${hours}h ago`;
+        const days = Math.round(hours / 24);
+        if (days < 30) return `modified ${days}d ago`;
+        return `modified ${new Date(mdStats.mtime).toLocaleDateString()}`;
+    }, [mdStats]);
 
     useEffect(() => {
         if (!filePath) return;
@@ -3444,9 +3494,30 @@ const MarkdownPreviewContent: React.FC<{ filePath: string }> = ({ filePath }) =>
     }
 
     return (
-        <div ref={containerRef} className="flex-1 overflow-auto p-4 theme-bg-primary">
-            <div className="prose prose-invert max-w-none">
-                <MarkdownRenderer content={content} />
+        <div className="flex-1 flex flex-col min-h-0">
+            <div ref={containerRef} className="flex-1 overflow-auto p-4 theme-bg-primary">
+                <div className="prose prose-invert max-w-none">
+                    <MarkdownRenderer content={content} />
+                </div>
+            </div>
+            <div className="flex-shrink-0 flex items-center gap-3 px-2 py-1 border-t border-white/10 bg-[#181825]/95 text-[10px] font-mono text-gray-400 select-none">
+                <span className="truncate min-w-0" title={filePath}>
+                    {filePath.split('/').pop() || 'untitled'}
+                </span>
+                {mdHash && (
+                    <span
+                        className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 shrink-0 cursor-help"
+                        title={`Content hash (SHA-256, first 8): ${mdHash}${mdStats?.size ? ` · ${mdStats.size} bytes` : ''}`}
+                    >
+                        #{mdHash}
+                    </span>
+                )}
+                {mdModifiedLabel && (
+                    <span className="theme-text-muted shrink-0" title={mdStats?.mtime ? new Date(mdStats.mtime).toLocaleString() : ''}>
+                        {mdModifiedLabel}
+                    </span>
+                )}
+                <span className="theme-text-muted shrink-0">{content.split('\n').length} lines</span>
             </div>
         </div>
     );
