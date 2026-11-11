@@ -200,7 +200,9 @@ const WorkspacesTab: React.FC<{ state: ManagerState; onRefresh: () => void; load
           No saved workspaces.
         </div>
       )}
-      {(state.workspaces || []).map((ws) => {
+      {[...(state.workspaces || [])].sort((a, b) =>
+        (a.folderPath.split('/').pop() || '').localeCompare(b.folderPath.split('/').pop() || '')
+      ).map((ws) => {
         const isOpen = (state.windows || []).some((w) => w.folderPath && w.folderPath.replace(/\/+$/, '') === ws.folderPath.replace(/\/+$/, ''));
         return (
           <div key={ws.folderPath} className="theme-bg-secondary border theme-border rounded p-3 flex items-center justify-between gap-3">
@@ -716,7 +718,7 @@ const TeamsTab: React.FC<{ workspacePaths?: string[]; windowPaths?: string[] }> 
         )}
 
         <div className="space-y-2">
-          {Object.entries(teams).map(([key, teamPath]) => (
+          {Object.entries(teams).sort(([a], [b]) => a.localeCompare(b)).map(([key, teamPath]) => (
             <div key={key} className="flex items-center justify-between px-3 py-2 rounded theme-bg-tertiary border theme-border text-xs">
               <div className="flex-1 min-w-0">
                 <div className="font-medium theme-text-primary truncate">{key}</div>
@@ -825,12 +827,13 @@ const Manager: React.FC = () => {
   useEffect(() => { refresh(); }, []);
   useInterval(refresh, 5000);
 
+  // Sorted alphabetically by label; the landing tab stays Overview.
   const tabs: { key: TabKey; label: string; icon: React.ElementType }[] = [
-    { key: 'overview', label: 'Overview', icon: Box },
     { key: 'account', label: 'Account', icon: User },
     { key: 'backend', label: 'Backend', icon: Server },
     { key: 'device', label: 'Device', icon: HardDrive },
     { key: 'models', label: 'Models', icon: Box },
+    { key: 'overview', label: 'Overview', icon: Box },
     { key: 'teams', label: 'Teams', icon: Users },
     { key: 'updates', label: 'Updates', icon: Download },
     { key: 'workspaces', label: 'Workspaces', icon: Monitor },
