@@ -3568,16 +3568,54 @@ function register(ctx) {
 
   ipcMain.handle('readLogFile', async (event, logType) => {
     try {
-      let logPath;
+      const logCandidates = [];
       switch (logType) {
-        case 'electron': logPath = electronLogPath; break;
-        case 'backend': logPath = backendLogPath; break;
-        default: throw new Error(`Unknown log type: ${logType}`);
+        case 'electron':
+          logCandidates.push(electronLogPath);
+          break;
+        case 'backend':
+          // The Python backend tees its own stdout/stderr to ~/.npcsh/incognide/logs/backend.log,
+          // which is the file that actually receives backend output. backendLogPath is the
+          // Electron-side stream and is only written by logBackend(). Prefer whichever file
+          // was written most recently so the Manager shows live output.
+          logCandidates.push(backendLogPath);
+          logCandidates.push(path.join(os.homedir(), '.npcsh', 'incognide', 'logs', 'backend.log'));
+          break;
+        default:
+          throw new Error(`Unknown log type: ${logType}`);
       }
-      if (fs.existsSync(logPath)) {
 
-        const content = fs.readFileSync(logPath, 'utf8');
-        const lines = content.split('\n');
+      let logPath = null;
+      let bestMtime = -1;
+      for (const candidate of logCandidates) {
+        try {
+          if (!candidate || !fs.existsSync(candidate)) continue;
+          const mtimeMs = fs.statSync(candidate).mtimeMs;
+          if (mtimeMs > bestMtime) { bestMtime = mtimeMs; logPath = candidate; }
+        } catch {}
+      }
+
+      if (logPath) {
+        // Read only the tail: these files routinely exceed 100 MB.
+        const stats = fs.statSync(logPath);
+        const TAIL_BYTES = 512 * 1024;
+        const start = Math.max(0, stats.size - TAIL_BYTES);
+        const length = stats.size - start;
+        const fd = fs.openSync(logPath, 'r');
+        let tail = '';
+        try {
+          const buf = Buffer.alloc(length);
+          fs.readSync(fd, buf, 0, length, start);
+          tail = buf.toString('utf8');
+        } finally {
+          try { fs.closeSync(fd); } catch {}
+        }
+        // Drop a partial first line when we sliced mid-file.
+        if (start > 0) {
+          const nl = tail.indexOf('\n');
+          if (nl !== -1) tail = tail.slice(nl + 1);
+        }
+        const lines = tail.split('\n');
         return lines.slice(-1000).join('\n');
       }
       return '';

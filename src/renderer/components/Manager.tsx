@@ -249,8 +249,9 @@ const WorkspacesTab: React.FC<{ state: ManagerState; onRefresh: () => void; load
 
 const BackendTab: React.FC<{ health: BackendHealth | null; onRefresh: () => void }> = ({ health, onRefresh }) => {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logs, setLogs] = useState<Record<string, LogEntry[]>>({});
   const [logsOpen, setLogsOpen] = useState(false);
+  const [logType, setLogType] = useState<'backend' | 'electron'>('backend');
   const [installOpen, setInstallOpen] = useState(false);
   const [pythonPath, setPythonPath] = useState('');
   const [installProgress, setInstallProgress] = useState<string[]>([]);
@@ -268,20 +269,39 @@ const BackendTab: React.FC<{ health: BackendHealth | null; onRefresh: () => void
     try { await fn(); } finally { setActionLoading(null); onRefresh(); }
   };
 
-  const loadLogs = async () => {
+  const loadLogs = async (type: 'backend' | 'electron' = logType) => {
     try {
-      const text = await api.readLogFile?.('backend');
-      if (!text) return;
-      const parsed = text.split('\n').filter((l: string) => l.trim()).slice(-200).map((line: string) => ({
-        timestamp: '',
-        level: line.toLowerCase().includes('error') ? 'error' as const : line.toLowerCase().includes('warn') ? 'warn' as const : 'info' as const,
-        message: line,
-      }));
-      setLogs(parsed);
+      const text = await api.readLogFile?.(type);
+      const parsed = !text ? [] : text
+        .split('\n')
+        .filter((l: string) => l.trim())
+        .slice(-400)
+        .map((line: string) => ({
+          timestamp: '',
+          level: line.toLowerCase().includes('error') ? 'error' as const : line.toLowerCase().includes('warn') ? 'warn' as const : 'info' as const,
+          message: line,
+        }));
+      setLogs((prev) => ({ ...prev, [type]: parsed }));
       setLogsOpen(true);
     } catch (err) {
-      console.error('Failed to load backend logs:', err);
+      console.error(`Failed to load ${type} logs:`, err);
+      setLogs((prev) => ({ ...prev, [type]: [] }));
     }
+  };
+
+  // Refresh the visible log every few seconds while the panel is open.
+  useEffect(() => {
+    if (!logsOpen) return;
+    loadLogs(logType);
+    const id = setInterval(() => { loadLogs(logType); }, 3000);
+    return () => clearInterval(id);
+  }, [logsOpen, logType]);
+
+  const openLogsDir = async () => {
+    try {
+      const dirs = await api.getLogsDir?.();
+      if (dirs?.logsDir) api.openFile?.(dirs.logsDir);
+    } catch {}
   };
 
   const handleInstall = async () => {
@@ -405,20 +425,52 @@ const BackendTab: React.FC<{ health: BackendHealth | null; onRefresh: () => void
       </div>
 
       <div className="theme-bg-secondary border theme-border rounded p-3">
-        <button
-          onClick={loadLogs}
-          className="w-full flex items-center justify-between text-xs font-medium theme-text-primary"
-        >
-          <span className="flex items-center gap-2"><Terminal size={14} /> Backend Log</span>
-          {logsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
+        <div className="flex items-center justify-between gap-2">
+          <button
+            onClick={() => { setLogsOpen((v) => !v); }}
+            className="flex items-center gap-2 text-xs font-medium theme-text-primary"
+          >
+            <Terminal size={14} /> Logs
+            {logsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+          <div className="flex items-center gap-1">
+            <div className="flex rounded border theme-border overflow-hidden">
+              {(['backend', 'electron'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => { setLogType(t); setLogsOpen(true); }}
+                  className={classNames(
+                    'px-2 py-0.5 text-[10px] capitalize transition-colors',
+                    logType === t ? 'bg-blue-600/25 text-blue-300' : 'theme-text-muted hover:theme-bg-tertiary'
+                  )}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => loadLogs(logType)}
+              className="p-1 rounded hover:theme-bg-tertiary theme-text-muted"
+              title="Refresh log"
+            >
+              <RefreshCw size={12} />
+            </button>
+            <button
+              onClick={openLogsDir}
+              className="p-1 rounded hover:theme-bg-tertiary theme-text-muted"
+              title="Open logs folder"
+            >
+              <ExternalLink size={12} />
+            </button>
+          </div>
+        </div>
         {logsOpen && (
           <div className="mt-3 theme-bg-primary border theme-border rounded p-2 h-64 overflow-auto text-[10px] font-mono theme-text-muted">
-            {logs.length === 0 ? (
-              <div className="theme-text-muted italic">No log entries loaded.</div>
+            {(logs[logType] || []).length === 0 ? (
+              <div className="theme-text-muted italic">No {logType} log entries.</div>
             ) : (
-              logs.map((entry, i) => (
-                <div key={i} className={classNames('py-0.5 border-b theme-border last:border-0', entry.level === 'error' && 'text-rose-400', entry.level === 'warn' && 'text-amber-400')}>
+              [...(logs[logType] || [])].reverse().map((entry, i) => (
+                <div key={i} className={classNames('py-0.5 border-b theme-border last:border-0 whitespace-pre-wrap break-all', entry.level === 'error' && 'text-rose-400', entry.level === 'warn' && 'text-amber-400')}>
                   {entry.message}
                 </div>
               ))
