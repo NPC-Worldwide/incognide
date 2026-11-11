@@ -3389,18 +3389,50 @@ const renderCronDaemonPane = useCallback(({ nodeId }: { nodeId: string }) => {
 const MarkdownPreviewContent: React.FC<{ filePath: string }> = ({ filePath }) => {
     const [content, setContent] = useState<string>('');
     const [loading, setLoading] = useState(true);
+    const containerRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
-        if (filePath) {
-            setLoading(true);
-            readFileContent(filePath).then((result: any) => {
-                setContent(result.content || '');
-                setLoading(false);
-            }).catch(() => {
-                setContent('Error loading file');
-                setLoading(false);
-            });
-        }
+        if (!filePath) return;
+        setLoading(true);
+        readFileContent(filePath).then((result: any) => {
+            setContent(result.content || '');
+            setLoading(false);
+        }).catch(() => {
+            setContent('Error loading file');
+            setLoading(false);
+        });
+    }, [filePath]);
+
+    // Re-read when the file changes on disk (e.g. a README edited in another
+    // editor or by an agent). The watcher must not reset the scroll position,
+    // so capture it before the re-render and restore it after.
+    useEffect(() => {
+        if (!filePath) return;
+        const api = (window as any).api;
+        if (!api?.watchFile || !api?.onFileChanged) return;
+
+        api.watchFile(filePath);
+        const removeListener = api.onFileChanged(async (changedPath: string) => {
+            if (!changedPath || changedPath !== filePath) return;
+            const scroller = containerRef.current;
+            const scrollTop = scroller?.scrollTop ?? 0;
+            try {
+                const result = await readFileContent(filePath);
+                const next = typeof result === 'string' ? result : result?.content;
+                if (next == null) return;
+                setContent(prev => (prev === next ? prev : next));
+                requestAnimationFrame(() => {
+                    if (containerRef.current) containerRef.current.scrollTop = scrollTop;
+                });
+            } catch (e) {
+                console.error('[MARKDOWN-WATCH] Reload failed:', e);
+            }
+        });
+
+        return () => {
+            removeListener?.();
+            api.unwatchFile?.(filePath);
+        };
     }, [filePath]);
 
     if (loading) {
@@ -3412,7 +3444,7 @@ const MarkdownPreviewContent: React.FC<{ filePath: string }> = ({ filePath }) =>
     }
 
     return (
-        <div className="flex-1 overflow-auto p-4 theme-bg-primary">
+        <div ref={containerRef} className="flex-1 overflow-auto p-4 theme-bg-primary">
             <div className="prose prose-invert max-w-none">
                 <MarkdownRenderer content={content} />
             </div>
