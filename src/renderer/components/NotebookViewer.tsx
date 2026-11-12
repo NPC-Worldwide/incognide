@@ -100,7 +100,9 @@ const NotebookViewer = ({
     setPaneContextMenu,
     closeContentPane,
     performSplit,
-    setCurrentFile
+    setCurrentFile,
+    onToggleZen,
+    isZenMode,
 }: any) => {
     const [notebook, setNotebook] = useState<Notebook | null>(null);
     const notebookRef = useRef<Notebook | null>(null);
@@ -1785,10 +1787,13 @@ except Exception as e:
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
+                                // In zen, X exits full screen instead of closing
+                                // (and losing) the pane.
+                                if (isZenMode && onToggleZen) { onToggleZen(); return; }
                                 closeContentPane(nodeId, findNodePath(rootLayoutNode, nodeId));
                             }}
                             className="p-1 theme-hover rounded-full"
-                            title="Close"
+                            title={isZenMode ? 'Exit zen mode' : 'Close'}
                         >
                             <X size={14} />
                         </button>

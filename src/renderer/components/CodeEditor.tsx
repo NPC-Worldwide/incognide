@@ -400,7 +400,7 @@ const editorThemeLight = EditorView.theme({
     },
 });
 
-const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMenu, onSelect, onSendToTerminal, savedEditorState, onEditorStateChange, keybindMode, appendKeystrokes, flushAll }) => {
+const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMenu, onSelect, onSendToTerminal, savedEditorState, onEditorStateChange, keybindMode, appendKeystrokes, flushAll, onCursorChange }) => {
     const editorRef = useRef(null);
 
     const onSelectRef = useRef(onSelect);
@@ -408,6 +408,7 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
     const onSendToTerminalRef = useRef(onSendToTerminal);
     const onSaveRef = useRef(onSave);
     const onEditorStateChangeRef = useRef(onEditorStateChange);
+    const onCursorChangeRef = useRef(onCursorChange);
     const appendKeystrokesRef = useRef(appendKeystrokes);
     const flushAllRef = useRef(flushAll);
     onSelectRef.current = onSelect;
@@ -415,6 +416,7 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
     onSendToTerminalRef.current = onSendToTerminal;
     onSaveRef.current = onSave;
     onEditorStateChangeRef.current = onEditorStateChange;
+    onCursorChangeRef.current = onCursorChange;
     appendKeystrokesRef.current = appendKeystrokes;
     flushAllRef.current = flushAll;
 
@@ -719,6 +721,19 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
             const { from, to } = viewUpdate.state.selection.main;
             onSelectRef.current(from, to);
         }
+        if ((viewUpdate.selectionSet || viewUpdate.docChanged) && onCursorChangeRef.current) {
+            const state = viewUpdate.state;
+            const head = state.selection.main.head;
+            const line = state.doc.lineAt(head);
+            const selectedChars = Math.abs(state.selection.main.to - state.selection.main.from);
+            onCursorChangeRef.current({
+                line: line.number,
+                col: head - line.from + 1,
+                selectedChars,
+                totalLines: state.doc.lines,
+                totalChars: state.doc.length,
+            });
+        }
     }, []);
 
     const handleContextMenu = useCallback((event: React.MouseEvent) => {
@@ -840,6 +855,12 @@ const CodeEditorPane = ({
     const [showKeybindGuide, setShowKeybindGuide] = useState(false);
     const [diskChangeContent, setDiskChangeContent] = useState<string | null>(null);
     const [showModeDropdown, setShowModeDropdown] = useState(false);
+    const [cursorInfo, setCursorInfo] = useState<{ line: number; col: number; selectedChars: number; totalLines: number; totalChars: number } | null>(null);
+    const [fileStats, setFileStats] = useState<{ mtime?: number; size?: number } | null>(null);
+    const [fileHash, setFileHash] = useState<string | null>(null);
+    // Bumped after a successful write/reload so the hash + mtime recompute even
+    // though `fileContent` itself did not change (the buffer already held the text).
+    const [fileMetaTick, setFileMetaTick] = useState(0);
     const [diskConflictModal, setDiskConflictModal] = useState<{ isOpen: boolean; diskMtime: number | null; diskContent: string | null }>({ isOpen: false, diskMtime: null, diskContent: null });
     const diskMtimeRef = useRef<number | null>(null);
     const diskContentRef = useRef<string | null>(null);
@@ -959,6 +980,7 @@ const CodeEditorPane = ({
                     currentPaneData.contentId = filepath;
                     currentPaneData.isUntitled = false;
                     currentPaneData.fileChanged = false;
+                    setFileMetaTick(t => t + 1);
                     setRootLayoutNode(p => ({ ...p }));
                 }
             });
@@ -986,6 +1008,7 @@ const CodeEditorPane = ({
         currentPaneData.fileChanged = false;
         const newStats = await checkDiskState(currentPaneData.contentId);
         updateDiskState(currentPaneData.fileContent || '', newStats.mtime);
+        setFileMetaTick(t => t + 1);
         setRootLayoutNode(p => ({ ...p }));
         setTimeout(() => { currentPaneData._selfWriting = false; }, 4000);
     }, [nodeId, contentDataRef, setRootLayoutNode, setPromptModal, currentPath, checkDiskState, updateDiskState]);
@@ -1001,11 +1024,13 @@ const CodeEditorPane = ({
             const newStats = await checkDiskState(currentPaneData.contentId);
             updateDiskState(currentPaneData.fileContent || '', newStats.mtime);
             setDiskChangeContent(null);
+            setFileMetaTick(t => t + 1);
             setRootLayoutNode(p => ({ ...p }));
             setTimeout(() => { currentPaneData._selfWriting = false; }, 4000);
         } else {
             if (diskConflictModal.diskContent != null) {
                 updateDiskState(diskConflictModal.diskContent, diskConflictModal.diskMtime || 0);
+                setFileMetaTick(t => t + 1);
             } else {
                 pendingDiskConflictRef.current = true;
             }
@@ -1040,6 +1065,7 @@ const CodeEditorPane = ({
                 pd.fileChanged = false;
                 const newStats = await checkDiskState(pd.contentId);
                 updateDiskState(pd.fileContent || '', newStats.mtime);
+                setFileMetaTick(t => t + 1);
                 setRootLayoutNode(p => ({ ...p }));
                 setTimeout(() => { pd._selfWriting = false; }, 4000);
             } catch (e) {
@@ -1075,6 +1101,7 @@ const CodeEditorPane = ({
                 updateDiskState(diskContent, stats?.mtimeMs || 0);
                 pendingDiskConflictRef.current = false;
                 setDiskChangeContent(null);
+                setFileMetaTick(t => t + 1);
                 setRootLayoutNode(p => ({ ...p }));
             }
         } catch (e) {
@@ -1140,6 +1167,69 @@ const CodeEditorPane = ({
             (window as any).api.unwatchFile(fp);
         };
     }, [nodeId, contentDataRef, setRootLayoutNode, updateDiskState]);
+
+    // File metadata for the status strip. The "hash" is a content fingerprint of
+    // the file itself (SHA-256 of the bytes, first 8 hex chars), so it identifies
+    // the version of the file you are looking at. It is independent of git and
+    // works for any file anywhere on disk.
+    useEffect(() => {
+        if (!filePath) {
+            setFileStats(null);
+            setFileHash(null);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const stats = await (window as any).api?.getFileStats?.(filePath);
+                if (!cancelled && stats) {
+                    setFileStats({
+                        mtime: stats.mtimeMs || (stats.mtime ? new Date(stats.mtime).getTime() : undefined),
+                        size: stats.size,
+                    });
+                }
+            } catch {}
+
+            // Prefer the on-disk bytes, so the hash reflects what was loaded rather
+            // than unsaved editor state. Fall back to the in-memory text for new
+            // (untitled) buffers.
+            let bytes = null;
+            try {
+                bytes = await (window as any).api?.readFileBuffer?.(filePath);
+            } catch {}
+            if (!bytes || !bytes.length) {
+                const text = fileContent;
+                if (text) bytes = new TextEncoder().encode(text);
+            }
+            if (!bytes || !bytes.length) {
+                if (!cancelled) setFileHash(null);
+                return;
+            }
+            try {
+                const digest = await crypto.subtle.digest('SHA-256', bytes);
+                const hex = Array.from(new Uint8Array(digest))
+                    .map((b) => b.toString(16).padStart(2, '0'))
+                    .join('');
+                if (!cancelled) setFileHash(hex.slice(0, 8));
+            } catch {
+                if (!cancelled) setFileHash(null);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [filePath, fileContent, fileMetaTick]);
+
+    const fileModifiedLabel = React.useMemo(() => {
+        if (!fileStats?.mtime) return null;
+        const diff = Date.now() - fileStats.mtime;
+        const mins = Math.round(diff / 60000);
+        if (mins < 1) return 'modified just now';
+        if (mins < 60) return `modified ${mins}m ago`;
+        const hours = Math.round(mins / 60);
+        if (hours < 24) return `modified ${hours}h ago`;
+        const days = Math.round(hours / 24);
+        if (days < 30) return `modified ${days}d ago`;
+        return `modified ${new Date(fileStats.mtime).toLocaleDateString()}`;
+    }, [fileStats]);
 
     const onEditorContextMenu = useCallback((e, selection) => {
         e.preventDefault();
@@ -1208,8 +1298,10 @@ const CodeEditorPane = ({
                     </div>
                 )}
 
-                <div className="flex-1 overflow-hidden min-h-0 relative">
+                <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
+                  <div className="flex-1 min-h-0 relative">
                     <CodeMirrorEditor
+                        onCursorChange={setCursorInfo}
                         appendKeystrokes={appendKeystrokes}
                         flushAll={flushAll}
                         value={fileContent || ''}
@@ -1223,14 +1315,41 @@ const CodeEditorPane = ({
                         savedEditorState={paneData?._scrollTopPos != null ? { scrollTopPos: paneData._scrollTopPos } : undefined}
                         onEditorStateChange={(state) => { if (paneData) { paneData._scrollTopPos = state.scrollTopPos; } }}
                     />
-                    <div className="absolute bottom-1 right-2 z-10 flex items-center gap-2">
-                        <span className="text-[10px] text-gray-500 font-mono select-none">
-                            {(fileContent || '').split('\n').length} lines
+                  </div>
+                  <div className="flex-shrink-0 relative">
+                    <div className="flex items-center justify-between gap-2 px-2 py-1 border-t border-white/10 bg-[#181825]/95 text-[10px] font-mono text-gray-400 select-none">
+                      <div className="flex items-center gap-3 min-w-0 overflow-hidden">
+                        <span className="truncate" title={filePath || ''}>
+                            {filePath ? getFileName(filePath) : 'untitled'}
                         </span>
+                        {fileHash && (
+                            <span
+                                className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 shrink-0 cursor-help"
+                                title={`Content hash (SHA-256, first 8): ${fileHash}${fileStats?.size ? ` · ${fileStats.size} bytes` : ''}`}
+                            >
+                                #{fileHash}
+                            </span>
+                        )}
+                        {fileModifiedLabel && (
+                            <span className="theme-text-muted shrink-0" title={fileStats?.mtime ? new Date(fileStats.mtime).toLocaleString() : ''}>
+                                {fileModifiedLabel}
+                            </span>
+                        )}
+                        <span className="shrink-0">
+                            {cursorInfo ? `Ln ${cursorInfo.line}, Col ${cursorInfo.col}` : 'Ln 1, Col 1'}
+                        </span>
+                        <span className="theme-text-muted shrink-0">
+                            {cursorInfo ? `${cursorInfo.totalLines} lines` : `${(fileContent || '').split('\n').length} lines`}
+                        </span>
+                        {cursorInfo?.selectedChars ? (
+                            <span className="text-purple-300 shrink-0">{cursorInfo.selectedChars} sel</span>
+                        ) : null}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
                         <div className="relative">
                             <button
                                 onClick={() => setShowModeDropdown(prev => !prev)}
-                                className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border bg-black/40 text-gray-300 border-white/10 hover:bg-black/60 hover:text-gray-100 cursor-pointer transition-colors"
+                                className="flex items-center gap-1 px-2 py-0.5 rounded border bg-black/40 text-gray-300 border-white/10 hover:bg-black/60 hover:text-gray-100 cursor-pointer transition-colors"
                                 title="Click to switch keybinding mode. Ctrl+Shift+Space to cycle."
                             >
                                 {keybindMode === 'default' ? 'Default' : keybindMode.charAt(0).toUpperCase() + keybindMode.slice(1)}
@@ -1283,9 +1402,10 @@ const CodeEditorPane = ({
                         >
                             <HelpCircle size={12} />
                         </button>
+                      </div>
                     </div>
                     {showKeybindGuide && (
-                        <div className="absolute bottom-7 left-0 right-0 z-20 border-t border-white/10 bg-[#181825]/95 backdrop-blur text-[11px] text-gray-300">
+                        <div className="absolute bottom-full left-0 right-0 z-20 border-t border-white/10 bg-[#181825]/95 backdrop-blur text-[11px] text-gray-300">
                             <div className="flex items-center justify-between px-3 py-1 border-b border-white/10 bg-black/20">
                                 <span className="font-medium text-gray-200 text-xs">
                                     {keybindMode === 'default' ? 'Default' : keybindMode === 'vim' ? 'Vim' : keybindMode === 'emacs' ? 'Emacs' : 'Nano'} Keybindings
@@ -1422,6 +1542,7 @@ const CodeEditorPane = ({
                             </div>
                         </div>
                     )}
+                  </div>
                 </div>
             </div>
 
@@ -1526,64 +1647,3 @@ const CodeEditorPane = ({
 };
 
 export default CodeEditorPane;
-
-    const renderFileContextMenu = () => (
-        fileContextMenuPos && (
-            <>
-                <div
-                    className="fixed inset-0 z-40 bg-transparent"
-                    onMouseDown={() => setFileContextMenuPos(null)}
-                />
-                <div
-                    className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50"
-                    style={{ top: fileContextMenuPos.y, left: fileContextMenuPos.x }}
-                    onMouseLeave={() => setFileContextMenuPos(null)}
-                >
-                    <button
-                        onClick={() => handleApplyPromptToFiles('summarize')}
-                        className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary"
-                    >
-                        <MessageSquare size={16} />
-                        <span>Summarize Files ({selectedFiles.size})</span>
-                    </button>
-                    <button
-                        onClick={() => handleApplyPromptToFilesInInput('summarize')}
-                        className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary"
-                    >
-                        <MessageSquare size={16} />
-                        <span>Summarize in Input Field ({selectedFiles.size})</span>
-                    </button>
-                    <div className="border-t theme-border my-1"></div>
-                    <button
-                        onClick={() => handleApplyPromptToFiles('analyze')}
-                        className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary"
-                    >
-                        <Edit size={16} />
-                        <span>Analyze Files ({selectedFiles.size})</span>
-                    </button>
-                    <button
-                        onClick={() => handleApplyPromptToFilesInInput('analyze')}
-                        className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary"
-                    >
-                        <Edit size={16} />
-                        <span>Analyze in Input Field ({selectedFiles.size})</span>
-                    </button>
-                    <div className="border-t theme-border my-1"></div>
-                    <button
-                        onClick={() => handleApplyPromptToFiles('refactor')}
-                        className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary"
-                    >
-                        <Code2 size={16} />
-                        <span>Refactor Code ({selectedFiles.size})</span>
-                    </button>
-                    <button
-                        onClick={() => handleApplyPromptToFiles('document')}
-                        className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary"
-                    >
-                        <FileText size={16} />
-                        <span>Document Code ({selectedFiles.size})</span>
-                    </button>
-                </div>
-            </>
-        )
-    );

@@ -231,14 +231,28 @@ export const PaneHeader = React.memo(({
             )}
 
             {!hideCloseButton && (
-                <button
-                    onClick={(e) => { e.stopPropagation(); onClose?.(); }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className="p-1.5 theme-hover rounded flex-shrink-0 text-gray-400 hover:text-red-400"
-                    title="Close pane"
-                >
-                    <X size={14} />
-                </button>
+                isZenMode ? (
+                    // In zen mode the close affordance must exit zen, never destroy the
+                    // pane: the pane still exists behind the overlay and closing it here
+                    // would lose the user's content.
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onToggleZen?.(); }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="p-1.5 theme-hover rounded flex-shrink-0 text-blue-400 hover:text-blue-300"
+                        title="Exit zen mode (Esc)"
+                    >
+                        <Minimize2 size={14} />
+                    </button>
+                ) : (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onClose?.(); }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="p-1.5 theme-hover rounded flex-shrink-0 text-gray-400 hover:text-red-400"
+                        title="Close pane"
+                    >
+                        <X size={14} />
+                    </button>
+                )
             )}
         </div>
     );

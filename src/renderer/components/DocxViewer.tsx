@@ -938,7 +938,17 @@ ${htmlContent}
                             </div>
                         )}
                     </div>
-                    <button onClick={() => closeContentPane(nodeId, findNodePath(rootLayoutNode, nodeId))} className="p-1.5 theme-hover rounded" title="Close">
+                    <button
+                        onClick={() => {
+                            // See CsvViewer: inside zen the X exits full screen
+                            // rather than closing (and losing) the pane.
+                            if (isZenMode && onToggleZen) { onToggleZen(); return; }
+                            if (onClose) { onClose(); return; }
+                            closeContentPane(nodeId, findNodePath(rootLayoutNode, nodeId));
+                        }}
+                        className="p-1.5 theme-hover rounded"
+                        title={isZenMode ? 'Exit zen mode' : 'Close'}
+                    >
                         <X size={14} />
                     </button>
                 </div>

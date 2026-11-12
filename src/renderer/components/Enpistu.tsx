@@ -150,7 +150,9 @@ import ConversationLabeling from './ConversationLabeling';
 
 import DataLabeler from './DataLabeler';
 import ChatInput from './ChatInput';
+import AgentInput from './AgentInput';
 import { PermissionModal } from './PermissionModal';
+import FileVersionsPane from './FileVersionsPane';
 import { StudioContext, executeStudioAction } from '../studioActions';
 
 
@@ -2680,8 +2682,6 @@ const renderChatView = useCallback(({ nodeId }) => {
                     messageLabel={messageLabels[msg.id || msg.timestamp]}
                     conversationId={paneData.contentId}
                     isAgentMode={paneData.executionMode !== 'chat'}
-                    availableModels={availableModels}
-                    availableNPCs={availableNPCs}
                     paneNodeId={nodeId}
                     onOpenFile={handleMessageOpenFile}
                 />
@@ -2697,8 +2697,6 @@ const renderChatView = useCallback(({ nodeId }) => {
                     messageLabel={messageLabels[msg.id]}
                     conversationId={paneData.contentId}
                     isAgentMode={paneData.executionMode !== 'chat'}
-                    availableModels={availableModels}
-                    availableNPCs={availableNPCs}
                     paneNodeId={nodeId}
                     onOpenFile={handleMessageOpenFile}
                 />
@@ -3389,18 +3387,100 @@ const renderCronDaemonPane = useCallback(({ nodeId }: { nodeId: string }) => {
 const MarkdownPreviewContent: React.FC<{ filePath: string }> = ({ filePath }) => {
     const [content, setContent] = useState<string>('');
     const [loading, setLoading] = useState(true);
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const [mdHash, setMdHash] = useState<string | null>(null);
+    const [mdStats, setMdStats] = useState<{ mtime?: number; size?: number } | null>(null);
 
     useEffect(() => {
-        if (filePath) {
-            setLoading(true);
-            readFileContent(filePath).then((result: any) => {
-                setContent(result.content || '');
-                setLoading(false);
-            }).catch(() => {
-                setContent('Error loading file');
-                setLoading(false);
-            });
+        if (!filePath) {
+            setMdHash(null);
+            setMdStats(null);
+            return;
         }
+        let cancelled = false;
+        (async () => {
+            try {
+                const stats = await (window as any).api?.getFileStats?.(filePath);
+                if (!cancelled && stats) {
+                    setMdStats({
+                        mtime: stats.mtimeMs || (stats.mtime ? new Date(stats.mtime).getTime() : undefined),
+                        size: stats.size,
+                    });
+                }
+            } catch {}
+            try {
+                const bytes = await (window as any).api?.readFileBuffer?.(filePath);
+                if (!bytes || !bytes.length) {
+                    if (!cancelled) setMdHash(null);
+                    return;
+                }
+                const digest = await crypto.subtle.digest('SHA-256', bytes);
+                const hex = Array.from(new Uint8Array(digest))
+                    .map((b) => b.toString(16).padStart(2, '0'))
+                    .join('');
+                if (!cancelled) setMdHash(hex.slice(0, 8));
+            } catch {
+                if (!cancelled) setMdHash(null);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [filePath, content]);
+
+    const mdModifiedLabel = React.useMemo(() => {
+        if (!mdStats?.mtime) return null;
+        const diff = Date.now() - mdStats.mtime;
+        const mins = Math.round(diff / 60000);
+        if (mins < 1) return 'modified just now';
+        if (mins < 60) return `modified ${mins}m ago`;
+        const hours = Math.round(mins / 60);
+        if (hours < 24) return `modified ${hours}h ago`;
+        const days = Math.round(hours / 24);
+        if (days < 30) return `modified ${days}d ago`;
+        return `modified ${new Date(mdStats.mtime).toLocaleDateString()}`;
+    }, [mdStats]);
+
+    useEffect(() => {
+        if (!filePath) return;
+        setLoading(true);
+        readFileContent(filePath).then((result: any) => {
+            setContent(result.content || '');
+            setLoading(false);
+        }).catch(() => {
+            setContent('Error loading file');
+            setLoading(false);
+        });
+    }, [filePath]);
+
+    // Re-read when the file changes on disk (e.g. a README edited in another
+    // editor or by an agent). The watcher must not reset the scroll position,
+    // so capture it before the re-render and restore it after.
+    useEffect(() => {
+        if (!filePath) return;
+        const api = (window as any).api;
+        if (!api?.watchFile || !api?.onFileChanged) return;
+
+        api.watchFile(filePath);
+        const removeListener = api.onFileChanged(async (changedPath: string) => {
+            if (!changedPath || changedPath !== filePath) return;
+            const scroller = containerRef.current;
+            const scrollTop = scroller?.scrollTop ?? 0;
+            try {
+                const result = await readFileContent(filePath);
+                const next = typeof result === 'string' ? result : result?.content;
+                if (next == null) return;
+                setContent(prev => (prev === next ? prev : next));
+                requestAnimationFrame(() => {
+                    if (containerRef.current) containerRef.current.scrollTop = scrollTop;
+                });
+            } catch (e) {
+                console.error('[MARKDOWN-WATCH] Reload failed:', e);
+            }
+        });
+
+        return () => {
+            removeListener?.();
+            api.unwatchFile?.(filePath);
+        };
     }, [filePath]);
 
     if (loading) {
@@ -3412,9 +3492,30 @@ const MarkdownPreviewContent: React.FC<{ filePath: string }> = ({ filePath }) =>
     }
 
     return (
-        <div className="flex-1 overflow-auto p-4 theme-bg-primary">
-            <div className="prose prose-invert max-w-none">
-                <MarkdownRenderer content={content} />
+        <div className="flex-1 flex flex-col min-h-0">
+            <div ref={containerRef} className="flex-1 overflow-auto p-4 theme-bg-primary">
+                <div className="prose prose-invert max-w-none">
+                    <MarkdownRenderer content={content} />
+                </div>
+            </div>
+            <div className="flex-shrink-0 flex items-center gap-3 px-2 py-1 border-t border-white/10 bg-[#181825]/95 text-[10px] font-mono text-gray-400 select-none">
+                <span className="truncate min-w-0" title={filePath}>
+                    {filePath.split('/').pop() || 'untitled'}
+                </span>
+                {mdHash && (
+                    <span
+                        className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 shrink-0 cursor-help"
+                        title={`Content hash (SHA-256, first 8): ${mdHash}${mdStats?.size ? ` · ${mdStats.size} bytes` : ''}`}
+                    >
+                        #{mdHash}
+                    </span>
+                )}
+                {mdModifiedLabel && (
+                    <span className="theme-text-muted shrink-0" title={mdStats?.mtime ? new Date(mdStats.mtime).toLocaleString() : ''}>
+                        {mdModifiedLabel}
+                    </span>
+                )}
+                <span className="theme-text-muted shrink-0">{content.split('\n').length} lines</span>
             </div>
         </div>
     );
@@ -3626,28 +3727,73 @@ useEffect(() => {
             paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: 'all' } }));
         }
     }, [availableNPCs]);
+    // Escape must win over the focused widget. Terminals (xterm) and editors
+    // (CodeMirror) call stopPropagation on Escape in the bubble phase, so a
+    // bubble-phase listener here never fired while one of them had focus - which
+    // is exactly when you want to leave zen mode. Listen in the capture phase
+    // instead, so we see the key first, and stop it from reaching the widget when
+    // it did something meaningful.
     useEffect(() => {
-        const handleGlobalDismiss = (e) => {
-            if (e.key === 'Escape') {
+        const handleGlobalDismiss = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
 
-                setContextMenuPos(null);
-                setFileContextMenuPos(null);
-                setMessageContextMenuPos(null);
-                setBrowserContextMenu({ isOpen: false, x: 0, y: 0, selectedText: '' });
+            const zenPaneId = zenModePaneIdRef.current;
 
-                setGitModalOpen(false);
-                setWorkspaceModalOpen(false);
-                setSearchResultsModalOpen(false);
-
+            // Leaving zen is the user's intent; don't also let the widget
+            // (vim's Esc-to-normal, a terminal escape sequence, ...) consume it.
+            // Do this FIRST so a throw from any of the resets below can never
+            // swallow the exit.
+            if (zenPaneId) {
                 setZenModePaneId(null);
+                e.preventDefault();
+                e.stopPropagation();
             }
+
+            setContextMenuPos(null);
+            setFileContextMenuPos(null);
+            setBrowserContextMenu({ isOpen: false, x: 0, y: 0, selectedText: '' });
+
+            setGitModalOpen(false);
+            setWorkspaceModalOpen(false);
+            setSearchResultsModalOpen(false);
         };
 
-        window.addEventListener('keydown', handleGlobalDismiss);
+        window.addEventListener('keydown', handleGlobalDismiss, true);
         return () => {
-            window.removeEventListener('keydown', handleGlobalDismiss);
+            window.removeEventListener('keydown', handleGlobalDismiss, true);
         };
     }, []);
+
+    const zenModePaneIdRef = useRef<string | null>(null);
+    useEffect(() => {
+        zenModePaneIdRef.current = zenModePaneId;
+    }, [zenModePaneId]);
+
+    // Focus the zen overlay when it opens so keystrokes (notably Escape) are
+    // delivered inside it even if nothing inside has grabbed focus yet.
+    // On exit, put focus back where the user left it: entering zen steals focus,
+    // so leaving it must hand focus back or the user is stranded with nothing
+    // focused and must click before typing works again.
+    const zenRootRef = useRef<HTMLDivElement | null>(null);
+    const preZenFocusRef = useRef<HTMLElement | null>(null);
+    useEffect(() => {
+        if (!zenModePaneId) {
+            const prev = preZenFocusRef.current;
+            preZenFocusRef.current = null;
+            if (prev && document.contains(prev)) {
+                const t = setTimeout(() => {
+                    try { prev.focus({ preventScroll: true }); } catch { /* element gone */ }
+                }, 0);
+                return () => clearTimeout(t);
+            }
+            return;
+        }
+        preZenFocusRef.current = document.activeElement as HTMLElement | null;
+        const t = setTimeout(() => {
+            zenRootRef.current?.focus({ preventScroll: true });
+        }, 0);
+        return () => clearTimeout(t);
+    }, [zenModePaneId]);
 
     const directoryConversationsRef = useRef(directoryConversations);
     useEffect(() => {
@@ -3693,7 +3839,6 @@ useEffect(() => {
 
 
 
-const renderMessageContextMenu = () => null;
 
 
 
@@ -6352,9 +6497,6 @@ const handleBrowserDialogNavigate = (url) => {
 
         {renderPdfContextMenu()}
         {renderBrowserContextMenu()}
-        
-
-        {renderMessageContextMenu()}
 
 
             <CtxEditor
@@ -7777,6 +7919,23 @@ const statusBar = bottomBarCollapsed ? (
     />
 );
 
+// Prop bundle for every viewer rendered inside the zen overlay. Both the zen
+// button and the viewer's own X resolve to "leave zen", never "close the pane":
+// a full-screen view is a temporary focus state, so destroying the pane from it
+// would discard work the user only meant to hide. The rename props are forwarded
+// because the viewers destructure them unconditionally and crash on undefined.
+const zenOverrideProps = (paneId: string) => ({
+    nodeId: paneId,
+    isZenMode: true,
+    onToggleZen: () => setZenModePaneId(null),
+    onClose: () => setZenModePaneId(null),
+    renamingPaneId,
+    setRenamingPaneId,
+    editedFileName,
+    setEditedFileName,
+    handleConfirmRename,
+});
+
 const renderMainContent = () => {
     if (!rootLayoutNode) {
         return (
@@ -8448,22 +8607,50 @@ const renderMainContent = () => {
 
 
             {zenModePaneId && contentDataRef.current[zenModePaneId] && (
-                <div className="fixed inset-0 z-[200] theme-bg-primary flex flex-col">
-                    <div className="absolute top-0 left-0 right-0 h-[3px] z-[201] group/zentrig">
-                    <div className="absolute top-0 left-0 right-0 z-[202] p-2 border-b theme-border text-xs theme-text-muted theme-bg-secondary flex justify-between items-center opacity-0 -translate-y-full group-hover/zentrig:opacity-100 group-hover/zentrig:translate-y-0 transition-all duration-200 pointer-events-none group-hover/zentrig:pointer-events-auto">
-                        <div className="flex items-center gap-2">
-                            <span className="font-semibold">Zen Mode</span>
-                            <span className="text-gray-500">-</span>
-                            <span>{getFileName(contentDataRef.current[zenModePaneId]?.contentId) || 'Focused View'}</span>
+                <div
+                    className="fixed inset-0 z-[200] theme-bg-primary flex flex-col outline-none"
+                    tabIndex={-1}
+                    ref={zenRootRef}
+                    // Escape handled at the overlay itself. The window-level capture
+                    // listener fires too, but chat/agent inputs attach their own
+                    // document-level handlers and the terminal swallows Escape, so
+                    // owning the key here is the only placement that is guaranteed to
+                    // see it while the input has focus.
+                    onKeyDownCapture={(e) => {
+                        if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setZenModePaneId(null);
+                        }
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setZenModePaneId(null);
+                        }
+                    }}
+                >
+                    {/* Always-visible exit bar. It used to be a 3px hover target that
+                        only appeared on mouse-over, so there was no discoverable way
+                        out of zen mode. */}
+                    <div className="flex-shrink-0 h-8 px-3 border-b theme-border text-xs theme-text-muted theme-bg-secondary flex justify-between items-center select-none">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-semibold shrink-0">Zen Mode</span>
+                            <span className="text-gray-500 shrink-0">-</span>
+                            <span className="truncate">{getFileName(contentDataRef.current[zenModePaneId]?.contentId) || 'Focused View'}</span>
                         </div>
-                        <button
-                            onClick={() => setZenModePaneId(null)}
-                            className="p-1 theme-hover rounded-full flex-shrink-0 transition-all hover:bg-blue-500/20"
-                            title="Exit zen mode (Esc)"
-                        >
-                            <X size={16} />
-                        </button>
-                    </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-[10px] theme-text-muted hidden sm:inline mr-1">Esc to exit</span>
+                            <button
+                                onClick={() => setZenModePaneId(null)}
+                                className="p-1 theme-hover rounded flex items-center gap-1 hover:bg-blue-500/20"
+                                title="Exit zen mode (Esc)"
+                            >
+                                <Minimize2 size={14} />
+                                <span className="text-[11px]">Exit</span>
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -8472,14 +8659,21 @@ const renderMainContent = () => {
                             const contentType = paneData?.contentType;
                             switch (contentType) {
                                 case 'chat':
+                                case 'agent': {
+                                    // Agent panes render through the same chat
+                                    // view but take AgentInput instead of
+                                    // ChatInput (mirrors LayoutNode). Without the
+                                    // explicit 'agent' case, zen on an agent pane
+                                    // fell through to "Unknown content type".
                                     const zenChatInputProps = getChatInputProps(zenModePaneId);
+                                    const ZenInput = contentType === 'agent' ? AgentInput : ChatInput;
                                     return (
                                         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                                             <div className="flex-1 min-h-0 overflow-y-auto">
                                                 {renderChatView({ nodeId: zenModePaneId })}
                                             </div>
                                             {zenChatInputProps && (
-                                                <ChatInput
+                                                <ZenInput
                                                     {...zenChatInputProps}
                                                     paneId={zenModePaneId}
                                                     onFocus={() => setActiveContentPaneId(zenModePaneId)}
@@ -8487,28 +8681,29 @@ const renderMainContent = () => {
                                             )}
                                         </div>
                                     );
+                                }
                                 case 'editor':
-                                    return renderFileEditor({ nodeId: zenModePaneId });
+                                    return renderFileEditor(zenOverrideProps(zenModePaneId));
                                 case 'terminal':
-                                    return renderTerminalView({ nodeId: zenModePaneId });
+                                    return renderTerminalView(zenOverrideProps(zenModePaneId));
                                 case 'pdf':
-                                    return renderPdfViewer({ nodeId: zenModePaneId });
+                                    return renderPdfViewer(zenOverrideProps(zenModePaneId));
                                 case 'csv':
-                                    return renderCsvViewer({ nodeId: zenModePaneId });
+                                    return renderCsvViewer(zenOverrideProps(zenModePaneId));
                                 case 'docx':
-                                    return renderDocxViewer({ nodeId: zenModePaneId });
+                                    return renderDocxViewer(zenOverrideProps(zenModePaneId));
                                 case 'browser':
-                                    return renderBrowserViewer({ nodeId: zenModePaneId });
+                                    return renderBrowserViewer({ ...zenOverrideProps(zenModePaneId), hasTabBar: false });
                                 case 'pptx':
-                                    return renderPptxViewer({ nodeId: zenModePaneId });
+                                    return renderPptxViewer(zenOverrideProps(zenModePaneId));
                                 case 'latex':
-                                    return renderLatexViewer({ nodeId: zenModePaneId, isZenMode: true, onToggleZen: () => setZenModePaneId(null) });
+                                    return renderLatexViewer(zenOverrideProps(zenModePaneId));
                                 case 'image':
                                     return renderPicViewer({ nodeId: zenModePaneId });
                                 case 'stl':
                                     return renderStlViewer({ nodeId: zenModePaneId });
                                 case 'notebook':
-                                    return renderNotebookViewer({ nodeId: zenModePaneId });
+                                    return renderNotebookViewer(zenOverrideProps(zenModePaneId));
                                 case 'exp':
                                     return renderExpViewer({ nodeId: zenModePaneId });
                                 case 'data-labeler':
@@ -8526,15 +8721,24 @@ const renderMainContent = () => {
                                 case 'cron-daemon':
                                     return renderCronDaemonPane({ nodeId: zenModePaneId });
                                 case 'search':
-                                    return renderSearchPane({ nodeId: zenModePaneId, initialQuery: zenPaneData?.initialQuery });
+                                    return renderSearchPane({ nodeId: zenModePaneId, initialQuery: contentDataRef.current[zenModePaneId]?.initialQuery });
                                 case 'markdown-preview':
                                     return renderMarkdownPreviewPane({ nodeId: zenModePaneId });
                                 case 'html-preview':
                                     return renderHtmlPreviewPane({ nodeId: zenModePaneId });
                                 case 'help':
                                     return renderHelpPane({ nodeId: zenModePaneId });
-                                default:
+                                default: {
+                                    // Anything not enumerated above still gets a
+                                    // real zen experience instead of "Unknown
+                                    // content type": fall back to the same
+                                    // renderer registry the normal layout uses,
+                                    // with the zen prop overrides. Keeps zen from
+                                    // drifting out of sync as pane types are added.
+                                    const zenFallback = paneRenderers[contentType];
+                                    if (zenFallback) return zenFallback(zenOverrideProps(zenModePaneId));
                                     return <div className="flex-1 flex items-center justify-center theme-text-muted">Unknown content type</div>;
+                                }
                             }
                         })()}
                     </div>

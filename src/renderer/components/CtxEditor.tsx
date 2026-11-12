@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { FileJson, X, Save, Plus, Trash2, Search, ChevronDown, Server, Database, RefreshCw } from 'lucide-react';
 import yaml from 'js-yaml';
 import AutosizeTextarea from './AutosizeTextarea';
@@ -63,6 +63,11 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
     const [providerScan, setProviderScan] = useState<Record<number, { loading: boolean; error?: string; models?: string[]; open: boolean }>>({});
     const [availableModels, setAvailableModels] = useState<any[]>([]);
     const [modelsLoading, setModelsLoading] = useState(false);
+    // Providers from ~/.incognide/models.yaml. Loaded here as well as via the prop
+    // because TeamManagement renders CtxEditor without userModelsProviders.
+    const [localUserProviders, setLocalUserProviders] = useState<any[]>([]);
+    // provider name -> models discovered from the provider's own endpoint
+    const [discoveredModels, setDiscoveredModels] = useState<Record<string, any[]>>({});
 
     const findCtxFile = async (dirPath: string) => {
         try {
@@ -96,6 +101,128 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
             if (typeof cleanup === 'function') cleanup();
         };
     }, [isOpen, teamPath]);
+
+    const reloadLocalUserProviders = async () => {
+        try {
+            const res = await (window as any).api?.userModelsLoad?.();
+            const providers = res?.config?.providers;
+            if (Array.isArray(providers)) setLocalUserProviders(providers);
+        } catch {
+            setLocalUserProviders([]);
+        }
+    };
+
+    useEffect(() => {
+        if (!isOpen) return;
+        reloadLocalUserProviders();
+    }, [isOpen]);
+
+    // Providers configured for this team/ctx plus the user's models.yaml. This is
+    // the source of truth for which provider rows the selector should show.
+    const providerEntries = useMemo(() => {
+        const merged = new Map<string, any>();
+        const add = (p: any) => {
+            const key = String(p?.name || p?.provider || '').trim();
+            if (!key) return;
+            const models = Array.isArray(p?.models) ? p.models.filter(Boolean) : [];
+            const prev = merged.get(key);
+            if (!prev) {
+                merged.set(key, { ...p, name: key, models });
+            } else if (models.length > 0 && (prev.models || []).length === 0) {
+                merged.set(key, { ...prev, ...p, name: key, models });
+            }
+        };
+        const propProviders = Array.isArray(userModelsProviders) ? userModelsProviders : [];
+        for (const p of propProviders) add(p);
+        for (const p of localUserProviders) add(p);
+        const ctxProviders = Array.isArray(ctx.providers) ? ctx.providers : [];
+        for (const p of ctxProviders) add(p);
+        return Array.from(merged.values());
+    }, [userModelsProviders, localUserProviders, ctx.providers]);
+
+    const providerEntryKey = useMemo(
+        () => providerEntries.map((p: any) => `${p.name}:${(p.models || []).length}`).join('|'),
+        [providerEntries]
+    );
+
+    // Discover models for providers that do not list any. Never invent a name:
+    // an empty result just means the provider is unreachable right now.
+    useEffect(() => {
+        if (!isOpen) return;
+        let cancelled = false;
+        (async () => {
+            const next: Record<string, any[]> = {};
+            const LOCAL_PROVIDERS = new Set(['ollama', 'lmstudio', 'llamacpp', 'lms']);
+            for (const prov of providerEntries) {
+                const key = prov.name;
+                if (!key) continue;
+                if (discoveredModels[key] !== undefined) continue;
+                const listed = (prov.models || []).length;
+                // Discover when the provider lists nothing, and also for local
+                // providers whose listed models may be stale or invented
+                // (e.g. a hardcoded default written by an older build).
+                if (listed > 0 && !LOCAL_PROVIDERS.has(String(key).toLowerCase())) continue;
+                try {
+                    const res = await (window as any).api?.getProviderModels?.({
+                        provider: key,
+                        baseUrl: prov.api_url,
+                        apiKeyVar: prov.api_key_var,
+                    });
+                    next[key] = (res?.models || [])
+                        .map((m: any) => {
+                            const id = typeof m === 'string' ? m : (m?.id || m?.name || m?.value || m?.display_name);
+                            if (!id) return null;
+                            return {
+                                value: id,
+                                display_name: `${id} | ${key}`,
+                                provider: key,
+                                context_window: m?.context_window ?? m?.context_length ?? m?.max_input_tokens ?? null,
+                            };
+                        })
+                        .filter(Boolean);
+                } catch {
+                    next[key] = [];
+                }
+            }
+            if (!cancelled && Object.keys(next).length > 0) {
+                setDiscoveredModels(prev => ({ ...prev, ...next }));
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [isOpen, providerEntryKey]);
+
+    // Backend/team models + models listed in models.yaml + discovered models.
+    const combinedModels = useMemo(() => {
+        const out: any[] = [];
+        const seen = new Set<string>();
+        const push = (m: any) => {
+            const value = typeof m === 'string' ? m : (m?.value || m?.id);
+            const provider = typeof m === 'string' ? null : (m?.provider || null);
+            if (!value) return;
+            const key = `${String(provider || '').toLowerCase()}::${value}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            out.push(
+                typeof m === 'string'
+                    ? { value, display_name: value, provider }
+                    : { ...m, value, display_name: m.display_name || value, provider }
+            );
+        };
+        for (const m of availableModels) push(m);
+        for (const prov of providerEntries) {
+            const key = prov.name;
+            const listed = Array.isArray(prov.models) ? prov.models : [];
+            const discovered = discoveredModels[key] || [];
+            // When live discovery succeeded, trust it over a stale listed entry.
+            const effective = discovered.length > 0 ? discovered : listed;
+            if (prov.model) push({ value: prov.model, display_name: `${prov.model} | ${key}`, provider: key });
+            for (const m of effective) {
+                if (typeof m === 'string') push({ value: m, display_name: `${m} | ${key}`, provider: key });
+                else push({ ...m, provider: key });
+            }
+        }
+        return out;
+    }, [availableModels, providerEntries, discoveredModels]);
 
     const loadModels = async () => {
         if (!teamPath) return;
@@ -180,6 +307,10 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
             const result = await (window as any).api.writeFileContent(teamPath + '/' + targetFile, yaml.dump(cleanCtx));
             if (result?.error) {
                 setError(result.error);
+            } else {
+                // write-file-content does not emit team-configs-updated, so refresh here.
+                loadModels();
+                reloadLocalUserProviders();
             }
         } catch (err: any) {
             setError(err?.message || 'Failed to save context');
@@ -199,57 +330,107 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
         return [];
     };
 
-    const addProvider = () => {
-        const current = getProviders();
-        setCtx(prev => ({
-            ...prev,
-            providers: [...current, { name: '', api_url: '', api_key: '', model: '', models: [] }]
-        }));
+    const normProviderName = (v: any) => String(v || '').toLowerCase().replace(/\s+/g, '');
+
+    // The editable provider list = ctx providers first, then models.yaml providers the
+    // ctx does not already declare. Row handlers below operate on THIS list so their
+    // indices stay aligned even when the team .ctx has no `providers` key.
+    const mergedProviderList = (): any[] => {
+        const out: any[] = [...getProviders()];
+        for (const up of providerEntries) {
+            const key = normProviderName(up?.name);
+            if (!key) continue;
+            if (out.some((cp: any) => normProviderName(cp?.name) === key)) continue;
+            out.push(up);
+        }
+        return out;
     };
 
-    const updateProvider = (index: number, field: keyof ProviderConfig, value: any) => {
-        const current = getProviders();
-        const next = [...current];
-        next[index] = { ...next[index], [field]: value };
+    const commitMergedProviders = (next: any[]) => {
+        if (next.length === 0) {
+            setCtx(prev => {
+                const { providers: _drop, ...rest } = prev;
+                return rest;
+            });
+            return;
+        }
         setCtx(prev => ({ ...prev, providers: next }));
     };
 
+    const addProvider = () => {
+        commitMergedProviders([
+            ...mergedProviderList(),
+            { name: '', api_url: '', api_key: '', model: '', models: [] },
+        ]);
+    };
+
+    const updateProvider = (index: number, field: keyof ProviderConfig, value: any) => {
+        const next = mergedProviderList();
+        if (!next[index]) return;
+        next[index] = { ...next[index], [field]: value };
+        commitMergedProviders(next);
+    };
+
     const addProviderModel = (index: number, modelName: string) => {
-        if (!modelName.trim()) return;
-        const current = getProviders();
-        const next = [...current];
+        const name = String(modelName || '').trim();
+        if (!name) return;
+        const next = mergedProviderList();
+        if (!next[index]) return;
         const models = next[index].models || [];
-        if (!models.includes(modelName.trim())) {
-            next[index] = { ...next[index], models: [...models, modelName.trim()] };
-            setCtx(prev => ({ ...prev, providers: next }));
+        if (!models.includes(name)) {
+            next[index] = { ...next[index], models: [...models, name] };
+            commitMergedProviders(next);
         }
     };
 
     const removeProviderModel = (index: number, modelIdx: number) => {
-        const current = getProviders();
-        const next = [...current];
+        const next = mergedProviderList();
+        if (!next[index]) return;
         const models = [...(next[index].models || [])];
         models.splice(modelIdx, 1);
         next[index] = { ...next[index], models };
-        setCtx(prev => ({ ...prev, providers: next }));
+        commitMergedProviders(next);
     };
 
-    const removeProvider = (index: number) => {
-        const current = getProviders();
-        const next = current.filter((_, i) => i !== index);
-        if (next.length === 0) {
-            setCtx(prev => {
-                const { providers: _, ...rest } = prev;
-                return rest;
-            });
-        } else {
-            setCtx(prev => ({ ...prev, providers: next }));
+    const removeProvider = async (index: number) => {
+        const next = mergedProviderList();
+        const target = next[index];
+        if (!target) return;
+        const name = normProviderName(target?.name);
+        const ctxList = getProviders();
+        const inCtx = ctxList.some((cp: any) => normProviderName(cp?.name) === name);
+
+        if (inCtx) {
+            commitMergedProviders(ctxList.filter((cp: any) => normProviderName(cp?.name) !== name));
+            return;
+        }
+
+        // Row came only from ~/.incognide/models.yaml: remove it from that file.
+        try {
+            const homeDir = await (window as any).api.getHomeDir();
+            const filePath = `${homeDir}/.incognide/models.yaml`;
+            const read = await (window as any).api.readFileContent(filePath);
+            const raw = typeof read === 'string' ? read : read?.content;
+            const parsed = raw ? (yaml.load(raw) as any) || {} : {};
+            const providers = Array.isArray(parsed.providers) ? parsed.providers : [];
+            const kept = providers.filter(
+                (p: any) => normProviderName(p?.name || p?.provider) !== name
+            );
+            if (kept.length !== providers.length) {
+                await (window as any).api.writeFileContent(
+                    filePath,
+                    yaml.dump({ providers: kept }, { sortKeys: false })
+                );
+                await reloadLocalUserProviders();
+                loadModels();
+            }
+        } catch (err: any) {
+            setError(err?.message || 'Failed to remove provider from models.yaml');
         }
     };
 
     const scanProviderModels = async (index: number) => {
-        const providers = getProviders();
-        const prov = providers[index];
+        const prov = mergedProviderList()[index];
         const providerName = (prov?.name || '').trim();
         if (!providerName) {
             setProviderScan(prev => ({ ...prev, [index]: { open: true, error: 'Provider name or type required', loading: false } }));
@@ -257,7 +438,11 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
         }
         setProviderScan(prev => ({ ...prev, [index]: { open: true, loading: true } }));
         try {
-            const res = await (window as any).api.getProviderModels({ provider: providerName });
+            const res = await (window as any).api.getProviderModels({
+                provider: providerName,
+                baseUrl: prov?.api_url,
+                apiKeyVar: prov?.api_key_var,
+            });
             if (res?.error) throw new Error(res.error);
             const models = (res?.models || [])
                 .map((m: any) => (typeof m === 'string' ? m : (m.id || m.name || m.value || m.display_name)))
@@ -707,7 +892,7 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
             return <div className="p-4 theme-text-muted">No team path selected.</div>;
         }
 
-        const providers = getProviders();
+        const providers = mergedProviderList();
 
         return (
             <div className="space-y-6 py-2">
@@ -726,7 +911,7 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
                     <div>
                         <label className="block text-sm theme-text-secondary mb-1">Default Model</label>
                         <ModelSelector
-                            availableModels={availableModels}
+                            availableModels={combinedModels}
                             selectedModel={ctx.model || null}
                             onSelect={(m) => {
                                 handleFieldChange('model', m.value);
@@ -735,9 +920,10 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
                             }}
                             loading={modelsLoading}
                             placeholder="Select default model"
-                            userModelsProviders={userModelsProviders}
+                            userModelsProviders={providerEntries}
                             onModelsChanged={() => {
                                 loadModels();
+                                reloadLocalUserProviders();
                                 reloadUserModelsConfig?.();
                             }}
                         />

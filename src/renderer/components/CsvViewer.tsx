@@ -1581,9 +1581,16 @@ const CsvViewer = ({
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
+                                // In zen mode the X means "leave full screen", not
+                                // "destroy the pane". Closing the pane from a
+                                // full-screen view is almost never what was meant,
+                                // and it loses the pane's state.
+                                if (isZenMode && onToggleZen) { onToggleZen(); return; }
+                                if (onClose) { onClose(); return; }
                                 closeContentPane(nodeId, findNodePath(rootLayoutNode, nodeId));
                             }}
                             className="p-1 theme-hover rounded-full"
+                            title={isZenMode ? 'Exit zen mode' : 'Close'}
                         >
                             <X size={14} />
                         </button>

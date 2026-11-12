@@ -52,6 +52,10 @@ const WebBrowserViewer = memo(({
     onPredictiveTextDismiss
 }) => {
     const webviewRef = useRef(null);
+    const isZenModeRef = useRef(isZenMode);
+    const onToggleZenRef = useRef(onToggleZen);
+    isZenModeRef.current = isZenMode;
+    onToggleZenRef.current = onToggleZen;
     const urlInputRef = useRef<HTMLInputElement>(null);
     const [currentUrl, setCurrentUrl] = useState('');
     const [urlInput, setUrlInput] = useState('');
@@ -1018,6 +1022,15 @@ const WebBrowserViewer = memo(({
 
             const isMod = input.control || input.meta;
             const key = (input.key || '').toLowerCase();
+
+            // Escape while the webview has focus: a webview swallows it, so the
+            // window-level capture listener never sees it. In zen mode this is the
+            // only way out, so handle it here before the modifier early-return.
+            if (key === 'escape' && isZenModeRef.current && onToggleZenRef.current) {
+                if (e.preventDefault) e.preventDefault();
+                onToggleZenRef.current();
+                return;
+            }
 
             if (!isMod) return;
 
@@ -2821,12 +2834,15 @@ const WebBrowserViewer = memo(({
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
+                                // hasTabBar is false precisely when this viewer is
+                                // rendered inside zen, so X means "leave zen".
+                                if (isZenMode && onToggleZen) { onToggleZen(); return; }
                                 const nodePath = findNodePath(rootLayoutNode, nodeId);
                                 closeContentPane(nodeId, nodePath);
                             }}
                             onMouseDown={(e) => e.stopPropagation()}
                             className="p-1.5 theme-hover rounded flex-shrink-0 text-gray-400 hover:text-red-400"
-                            title="Close pane"
+                            title={isZenMode ? 'Exit zen mode' : 'Close pane'}
                         >
                             <X size={14} />
                         </button>

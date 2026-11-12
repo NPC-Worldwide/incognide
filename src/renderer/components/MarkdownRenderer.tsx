@@ -551,7 +551,7 @@ const FILE_PATH_REGEX = /(?:^|[\s`'"({\[])((?:\/[^\s<>"'`()\[\]{}]+)+|(?:[A-Za-z
 const TextWithPaths = memo(({ text, onOpenFile }: { text: string; onOpenFile?: (path: string) => void }) => {
   if (!onOpenFile || !text) return <>{text}</>;
 
-  const parts: (string | JSX.Element)[] = [];
+  const parts: (string | React.ReactElement)[] = [];
   let lastIndex = 0;
   let match;
 

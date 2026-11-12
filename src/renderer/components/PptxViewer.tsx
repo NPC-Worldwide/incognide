@@ -2155,8 +2155,10 @@ const PptxViewer = ({
           <button onClick={save} disabled={!hasChanges} className="p-1.5 theme-hover rounded disabled:opacity-30" title="Save"><Save size={14} /></button>
           <button onClick={() => {
             const np = findNodePath?.(rootLayoutNode, nodeId);
+            if (isZenMode && onToggleZen) { onToggleZen(); return; }
+            if (onClose) { onClose(); return; }
             if (np) closeContentPane?.(nodeId, np);
-          }} className="p-1.5 theme-hover rounded-full" title="Close"><X size={14} /></button>
+          }} className="p-1.5 theme-hover rounded-full" title={isZenMode ? 'Exit zen mode' : 'Close'}><X size={14} /></button>
         </div>
       </div>
 

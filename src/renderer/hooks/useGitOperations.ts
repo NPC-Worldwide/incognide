@@ -1,5 +1,45 @@
 import { useState, useCallback } from 'react';
 
+// Shapes returned by the git IPC handlers (src/ipc/git.js) and consumed by
+// GitModal / Sidebar. These were referenced here but never declared, so the
+// hook only typechecked once they were lost in the TS refactor.
+export interface GitStatusFile {
+    path: string;
+    status: string;
+}
+
+export interface GitStatusData {
+    success?: boolean;
+    branch?: string;
+    ahead?: number;
+    behind?: number;
+    staged?: GitStatusFile[];
+    unstaged?: GitStatusFile[];
+    untracked?: GitStatusFile[];
+    conflicted?: GitStatusFile[];
+    error?: string;
+}
+
+export interface GitDiffData {
+    staged: string;
+    unstaged: string;
+}
+
+export interface GitBranchesData {
+    branches: string[];
+    current: string;
+}
+
+export interface GitCommitData {
+    hash: string;
+    author_name: string;
+    author_email: string;
+    date: string;
+    message: string;
+    details?: string;
+    diff?: string;
+}
+
 interface UseGitOperationsParams {
     currentPath: string;
 }

@@ -28,21 +28,6 @@ const KNOWN_PROVIDERS = new Set([
     'mistral', 'together', 'xai', 'perplexity', 'ollama', 'lmstudio', 'llamacpp',
 ]);
 
-const DEFAULT_MODELS: Record<string, string> = {
-    openai: 'gpt-4o',
-    anthropic: 'claude-sonnet-4',
-    gemini: 'gemini-2.5-flash',
-    openrouter: 'openai/gpt-4o',
-    deepseek: 'deepseek-chat',
-    groq: 'llama-3.3-70b-versatile',
-    moonshot: 'moonshot-v1-8k',
-    mistral: 'mistral-large-latest',
-    together: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
-    xai: 'grok-3',
-    perplexity: 'sonar-pro',
-    ollama: 'qwen3.5:4b',
-};
-
 const saveProviderToUserModels = async (payload: AddProviderPayload) => {
     const pKey = payload.provider.toLowerCase().replace(/\s+/g, '');
     const isKnown = KNOWN_PROVIDERS.has(pKey);
@@ -95,20 +80,30 @@ const detectProviderConfig = async (key: string): Promise<{ baseUrl?: string; ap
     return null;
 };
 
+const normalizeModelNames = (list: any): string[] =>
+    (Array.isArray(list) ? list : [])
+        .map((m: any) => (typeof m === 'string' ? m : (m?.name || m?.id || m?.filename || m?.value || m?.display_name)))
+        .filter(Boolean);
+
+// Discover the real model list for a provider. Never invent a model name: an
+// empty result is a valid answer and the provider gets scanned again at runtime
+// (see the empty `models: []` convention in models.yaml).
 const scanProviderModels = async (key: string, baseUrl?: string, apiKeyVar?: string): Promise<string[]> => {
     try {
         if (key === 'ollama') {
-            const result = await window.api.getLocalOllamaModels();
-            return (result?.models || []).map((m: any) => m.name || m.id || m);
+            const local = await (window as any).api.getLocalOllamaModels?.();
+            const names = normalizeModelNames(local?.models);
+            if (names.length > 0) return names;
         }
         if (key === 'lmstudio' || key === 'llamacpp') {
-            const result = await (window as any).api.scanLocalModels?.(key);
-            return (result?.models || []).map((m: any) => m.name || m.id || m.filename || m);
+            const local = await (window as any).api.scanLocalModels?.(key);
+            const names = normalizeModelNames(local?.models);
+            if (names.length > 0) return names;
         }
-        if (baseUrl && apiKeyVar) {
-            const result = await (window as any).api.getProviderModels({ provider: key, baseUrl, apiKeyVar });
-            return (result?.models || []).map((m: any) => m.name || m.id || m);
-        }
+        const remote = baseUrl && apiKeyVar
+            ? await (window as any).api.getProviderModels?.({ provider: key, baseUrl, apiKeyVar })
+            : await (window as any).api.getProviderModels?.({ provider: key });
+        return normalizeModelNames(remote?.models);
     } catch {}
     return [];
 };
@@ -308,18 +303,24 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         setQuickAdding(key);
         try {
             const isKnown = KNOWN_PROVIDERS.has(key);
-            const models: string[] = DEFAULT_MODELS[key] ? [DEFAULT_MODELS[key]] : [];
+            let options: any = {};
+            if (!isKnown) {
+                const detected = await detectProviderConfig(key);
+                if (detected?.baseUrl && detected?.apiKeyVar) {
+                    options = { apiUrl: detected.baseUrl, apiKeyVar: detected.apiKeyVar };
+                }
+            }
+            // Discover the provider's actual models. An empty list is fine: the
+            // provider is re-scanned at runtime when `models` is empty.
+            const models = await scanProviderModels(key, options.apiUrl, options.apiKeyVar);
             const res = await (window as any).api.userModelsUpdate({
                 providerName: key,
                 models,
-                options: isKnown ? {} : {
-                    apiUrl: '',
-                    apiKeyVar: '',
-                },
+                options,
             });
             if (res?.error) throw new Error(res.error);
             setShowAddForm(false);
-            onModelsChanged?.();
+            onModelsChanged?.(models[0]);
         } catch (err: any) {
             console.error('[ModelSelector] quick add failed:', err.message);
         } finally {

@@ -24,7 +24,9 @@ interface BackendHealth {
 
 interface WorkspaceInfo {
   folderPath: string;
-  lastAccessed?: number;
+  lastAccessed?: number | null;
+  firstSeen?: number | null;
+  isOpen?: boolean;
 }
 
 interface WindowInfo {
@@ -164,9 +166,12 @@ const OverviewTab: React.FC<{ state: ManagerState; onRefresh: () => void; loadin
 
 const WorkspacesTab: React.FC<{ state: ManagerState; onRefresh: () => void; loading: boolean }> = ({ state, onRefresh, loading }) => {
   const [confirmForget, setConfirmForget] = useState<string | null>(null);
+  const [showClosed, setShowClosed] = useState(true);
 
   const openWorkspace = async (folderPath: string) => {
     await api.openNewWindow?.(folderPath);
+    // Reflect the newly opened window without waiting for the next poll.
+    setTimeout(() => onRefresh(), 600);
   };
 
   const forgetWorkspace = (folderPath: string) => {
@@ -175,10 +180,23 @@ const WorkspacesTab: React.FC<{ state: ManagerState; onRefresh: () => void; load
     onRefresh();
   };
 
+  const workspaceIsOpen = (ws: WorkspaceInfo) => (
+    typeof ws.isOpen === 'boolean'
+      ? ws.isOpen
+      : (state.windows || []).some((w) => w.folderPath && w.folderPath.replace(/\/+$/, '') === ws.folderPath.replace(/\/+$/, ''))
+  );
+
+  const allWorkspaces = state.workspaces || [];
+  const openCount = allWorkspaces.filter(workspaceIsOpen).length;
+  const closedCount = allWorkspaces.length - openCount;
+  const visibleWorkspaces = showClosed ? allWorkspaces : allWorkspaces.filter(workspaceIsOpen);
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs theme-text-muted">{state.workspaces?.length ?? 0} saved workspace{state.workspaces?.length === 1 ? '' : 's'} · {state.windows?.length ?? 0} open</div>
+        <div className="text-xs theme-text-muted">
+          {allWorkspaces.length} known workspace{allWorkspaces.length === 1 ? '' : 's'} · {openCount} open · {closedCount} closed
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => api.reopenClosedWindows?.()}
@@ -195,21 +213,43 @@ const WorkspacesTab: React.FC<{ state: ManagerState; onRefresh: () => void; load
           </button>
         </div>
       </div>
-      {(state.workspaces?.length ?? 0) === 0 && (
+      {allWorkspaces.length === 0 && (
         <div className="theme-bg-secondary border theme-border rounded p-6 text-center text-sm theme-text-muted">
           No saved workspaces.
         </div>
       )}
-      {(state.workspaces || []).map((ws) => {
-        const isOpen = (state.windows || []).some((w) => w.folderPath && w.folderPath.replace(/\/+$/, '') === ws.folderPath.replace(/\/+$/, ''));
+      {allWorkspaces.length > 0 && (
+        <button
+          onClick={() => setShowClosed((v) => !v)}
+          className="text-[10px] px-2 py-1 rounded border theme-border theme-text-muted hover:theme-bg-tertiary"
+        >
+          {showClosed ? 'Hide closed workspaces' : `Show ${closedCount} closed workspace${closedCount === 1 ? '' : 's'}`}
+        </button>
+      )}
+      {visibleWorkspaces.map((ws) => {
+        const isOpen = workspaceIsOpen(ws);
         return (
-          <div key={ws.folderPath} className="theme-bg-secondary border theme-border rounded p-3 flex items-center justify-between gap-3">
+          <div
+            key={ws.folderPath}
+            className={classNames(
+              'theme-bg-secondary border theme-border rounded p-3 flex items-center justify-between gap-3',
+              !isOpen && 'opacity-60'
+            )}
+          >
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium theme-text-primary truncate">{ws.folderPath.split('/').pop() || 'Untitled'}</div>
+              <div className="text-sm font-medium theme-text-primary truncate flex items-center gap-1.5">
+                {ws.folderPath.split('/').pop() || 'Untitled'}
+                <span className={classNames(
+                  'text-[9px] px-1.5 py-0.5 rounded font-normal',
+                  isOpen ? 'bg-emerald-600/20 text-emerald-300' : 'bg-gray-600/30 theme-text-muted'
+                )}>
+                  {isOpen ? 'open' : 'closed'}
+                </span>
+              </div>
               <div className="text-xs theme-text-muted truncate">{ws.folderPath}</div>
-              {ws.lastAccessed && (
+              {ws.lastAccessed ? (
                 <div className="text-[10px] theme-text-muted mt-0.5">Last opened {formatDate(new Date(ws.lastAccessed).toISOString())}</div>
-              )}
+              ) : null}
             </div>
             <div className="flex items-center gap-1">
               {!isOpen && (
@@ -247,8 +287,9 @@ const WorkspacesTab: React.FC<{ state: ManagerState; onRefresh: () => void; load
 
 const BackendTab: React.FC<{ health: BackendHealth | null; onRefresh: () => void }> = ({ health, onRefresh }) => {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logs, setLogs] = useState<Record<string, LogEntry[]>>({});
   const [logsOpen, setLogsOpen] = useState(false);
+  const [logType, setLogType] = useState<'backend' | 'electron'>('backend');
   const [installOpen, setInstallOpen] = useState(false);
   const [pythonPath, setPythonPath] = useState('');
   const [installProgress, setInstallProgress] = useState<string[]>([]);
@@ -266,20 +307,39 @@ const BackendTab: React.FC<{ health: BackendHealth | null; onRefresh: () => void
     try { await fn(); } finally { setActionLoading(null); onRefresh(); }
   };
 
-  const loadLogs = async () => {
+  const loadLogs = async (type: 'backend' | 'electron' = logType) => {
     try {
-      const text = await api.readLogFile?.('backend');
-      if (!text) return;
-      const parsed = text.split('\n').filter((l: string) => l.trim()).slice(-200).map((line: string) => ({
-        timestamp: '',
-        level: line.toLowerCase().includes('error') ? 'error' as const : line.toLowerCase().includes('warn') ? 'warn' as const : 'info' as const,
-        message: line,
-      }));
-      setLogs(parsed);
+      const text = await api.readLogFile?.(type);
+      const parsed = !text ? [] : text
+        .split('\n')
+        .filter((l: string) => l.trim())
+        .slice(-400)
+        .map((line: string) => ({
+          timestamp: '',
+          level: line.toLowerCase().includes('error') ? 'error' as const : line.toLowerCase().includes('warn') ? 'warn' as const : 'info' as const,
+          message: line,
+        }));
+      setLogs((prev) => ({ ...prev, [type]: parsed }));
       setLogsOpen(true);
     } catch (err) {
-      console.error('Failed to load backend logs:', err);
+      console.error(`Failed to load ${type} logs:`, err);
+      setLogs((prev) => ({ ...prev, [type]: [] }));
     }
+  };
+
+  // Refresh the visible log every few seconds while the panel is open.
+  useEffect(() => {
+    if (!logsOpen) return;
+    loadLogs(logType);
+    const id = setInterval(() => { loadLogs(logType); }, 3000);
+    return () => clearInterval(id);
+  }, [logsOpen, logType]);
+
+  const openLogsDir = async () => {
+    try {
+      const dirs = await api.getLogsDir?.();
+      if (dirs?.logsDir) api.openFile?.(dirs.logsDir);
+    } catch {}
   };
 
   const handleInstall = async () => {
@@ -403,20 +463,52 @@ const BackendTab: React.FC<{ health: BackendHealth | null; onRefresh: () => void
       </div>
 
       <div className="theme-bg-secondary border theme-border rounded p-3">
-        <button
-          onClick={loadLogs}
-          className="w-full flex items-center justify-between text-xs font-medium theme-text-primary"
-        >
-          <span className="flex items-center gap-2"><Terminal size={14} /> Backend Log</span>
-          {logsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
+        <div className="flex items-center justify-between gap-2">
+          <button
+            onClick={() => { setLogsOpen((v) => !v); }}
+            className="flex items-center gap-2 text-xs font-medium theme-text-primary"
+          >
+            <Terminal size={14} /> Logs
+            {logsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+          <div className="flex items-center gap-1">
+            <div className="flex rounded border theme-border overflow-hidden">
+              {(['backend', 'electron'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => { setLogType(t); setLogsOpen(true); }}
+                  className={classNames(
+                    'px-2 py-0.5 text-[10px] capitalize transition-colors',
+                    logType === t ? 'bg-blue-600/25 text-blue-300' : 'theme-text-muted hover:theme-bg-tertiary'
+                  )}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => loadLogs(logType)}
+              className="p-1 rounded hover:theme-bg-tertiary theme-text-muted"
+              title="Refresh log"
+            >
+              <RefreshCw size={12} />
+            </button>
+            <button
+              onClick={openLogsDir}
+              className="p-1 rounded hover:theme-bg-tertiary theme-text-muted"
+              title="Open logs folder"
+            >
+              <ExternalLink size={12} />
+            </button>
+          </div>
+        </div>
         {logsOpen && (
           <div className="mt-3 theme-bg-primary border theme-border rounded p-2 h-64 overflow-auto text-[10px] font-mono theme-text-muted">
-            {logs.length === 0 ? (
-              <div className="theme-text-muted italic">No log entries loaded.</div>
+            {(logs[logType] || []).length === 0 ? (
+              <div className="theme-text-muted italic">No {logType} log entries.</div>
             ) : (
-              logs.map((entry, i) => (
-                <div key={i} className={classNames('py-0.5 border-b theme-border last:border-0', entry.level === 'error' && 'text-rose-400', entry.level === 'warn' && 'text-amber-400')}>
+              [...(logs[logType] || [])].reverse().map((entry, i) => (
+                <div key={i} className={classNames('py-0.5 border-b theme-border last:border-0 whitespace-pre-wrap break-all', entry.level === 'error' && 'text-rose-400', entry.level === 'warn' && 'text-amber-400')}>
                   {entry.message}
                 </div>
               ))
@@ -716,7 +808,7 @@ const TeamsTab: React.FC<{ workspacePaths?: string[]; windowPaths?: string[] }> 
         )}
 
         <div className="space-y-2">
-          {Object.entries(teams).map(([key, teamPath]) => (
+          {Object.entries(teams).sort(([a], [b]) => a.localeCompare(b)).map(([key, teamPath]) => (
             <div key={key} className="flex items-center justify-between px-3 py-2 rounded theme-bg-tertiary border theme-border text-xs">
               <div className="flex-1 min-w-0">
                 <div className="font-medium theme-text-primary truncate">{key}</div>
@@ -825,12 +917,13 @@ const Manager: React.FC = () => {
   useEffect(() => { refresh(); }, []);
   useInterval(refresh, 5000);
 
+  // Sorted alphabetically by label; the landing tab stays Overview.
   const tabs: { key: TabKey; label: string; icon: React.ElementType }[] = [
-    { key: 'overview', label: 'Overview', icon: Box },
     { key: 'account', label: 'Account', icon: User },
     { key: 'backend', label: 'Backend', icon: Server },
     { key: 'device', label: 'Device', icon: HardDrive },
     { key: 'models', label: 'Models', icon: Box },
+    { key: 'overview', label: 'Overview', icon: Box },
     { key: 'teams', label: 'Teams', icon: Users },
     { key: 'updates', label: 'Updates', icon: Download },
     { key: 'workspaces', label: 'Workspaces', icon: Monitor },
