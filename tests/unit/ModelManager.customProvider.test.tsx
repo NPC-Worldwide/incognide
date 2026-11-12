@@ -167,6 +167,28 @@ describe('ModelManager custom provider', () => {
     expect(await screen.findByText('deepseek-ai/DeepSeek-V4.1-Flash')).toBeInTheDocument();
   });
 
+  it('discovers models for a configured UberLLM provider', async () => {
+    const api = window.api as any;
+    api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{
+      name: 'uberllm',
+      api_url: 'https://api.uberllm.dev/v1',
+      api_key_var: 'UBERLLM_API_KEY',
+    }] } });
+    api.getProviderModels = vi.fn().mockResolvedValue({ models: [
+      { id: 'deepseek/deepseek-v4-flash', name: 'deepseek/deepseek-v4-flash', provider: 'uberllm' },
+    ] });
+    const user = userEvent.setup();
+    render(<ModelManager />);
+    const label = await screen.findByText('UberLLM');
+    await user.click(label.closest('button')!);
+    await waitFor(() => expect(api.getProviderModels).toHaveBeenCalledWith({
+      provider: 'uberllm',
+      baseUrl: 'https://api.uberllm.dev/v1',
+      apiKeyVar: 'UBERLLM_API_KEY',
+    }));
+    expect(await screen.findByText('deepseek/deepseek-v4-flash')).toBeInTheDocument();
+  });
+
   it('shows a custom provider added without an API key', async () => {
     const user = userEvent.setup();
     render(<ModelManager />);

@@ -139,6 +139,17 @@ models. Add the detected provider, then expand its card to load the models avail
 to your key; `deepseek-ai/DeepSeek-V4.1-Flash` is the default model. API usage is
 billed separately by Runcrate ([docs](https://runcrate.ai/docs/models/overview)).
 
+#### UberLLM
+
+Get your own key from [UberLLM](https://uberllm.dev/signup) and save it as
+`UBERLLM_API_KEY` in Global Settings or `~/.incogniderc`. Restart Incognide after
+changing environment variables. Model Manager detects UberLLM and uses
+`https://api.uberllm.dev/v1` for its OpenAI-compatible API to models from many
+vendors (DeepSeek, Anthropic, OpenAI, Qwen and others). Add the detected provider,
+then expand its card to load the models available to your key;
+`deepseek/deepseek-v4-flash` is the default model. API usage is billed separately
+by UberLLM ([models and prices](https://uberllm.dev/models)).
+
 ### 4. Local setup for fine-tuning
 
 Inference with LLMs is routed through the bundled backend (including calls to locally running models with llama.cpp, omlx, etc), but users can also fine-tune models within incognide. To accomplish this, you need to specify a Python virtual environment with the heavy packages (`torch`+ `transformers` etc.). For such calls, Incognide shells out to the specified venv instead of including these dependencies in the bundled backend to keep the packaged executable small.
