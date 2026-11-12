@@ -2682,7 +2682,7 @@ const renderWebsiteList = () => {
                         />
                         {!gitPanelCollapsed && (
                             <button
-                                onClick={(e) => { e.stopPropagation(); refreshGitStatus?.(); }}
+                                onClick={(e) => { e.stopPropagation(); loadGitStatus(); }}
                                 className="p-1.5 hover:bg-blue-500/20 rounded transition-all text-gray-400 hover:text-blue-400"
                                 title="Refresh git status"
                             >

@@ -351,39 +351,6 @@ function register(ctx) {
     }
   });
 
-  // Last commit that touched a single file. Used by the editor status strip to
-  // show a short hash and commit time without shelling out from the renderer.
-  ipcMain.handle('gitFileLastCommit', async (event, repoPath, filePath) => {
-    try {
-      const git = simpleGit(repoPath);
-      const absolute = path.isAbsolute(filePath) ? filePath : path.join(repoPath, filePath);
-      const relative = path.relative(repoPath, absolute);
-      if (!relative || relative.startsWith('..')) {
-        return { success: false, error: 'file is outside the repository' };
-      }
-      const log = await git.log({
-        file: relative.replace(/\\/g, '/'),
-        maxCount: 1,
-        format: { hash: '%H', shortHash: '%h', date: '%cI', author: '%an', subject: '%s' },
-      });
-      const entry = log?.latest;
-      if (!entry) return { success: true, commit: null };
-      return {
-        success: true,
-        commit: {
-          hash: entry.hash,
-          shortHash: entry.shortHash,
-          date: entry.date,
-          author: entry.author,
-          subject: entry.subject,
-        },
-      };
-    } catch (err) {
-      // Not a repo, or the file has never been committed: not an error worth surfacing.
-      return { success: false, error: err.message };
-    }
-  });
-
   ipcMain.handle('gitShowFile', async (event, repoPath, filePath, ref = 'HEAD') => {
     log(`[Git] Show file ${filePath} at ${ref} in ${repoPath}`);
     try {

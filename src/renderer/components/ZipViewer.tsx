@@ -27,7 +27,9 @@ const ZipViewer = ({
     rootLayoutNode,
     setDraggedItem,
     setPaneContextMenu,
-    closeContentPane
+    closeContentPane,
+    onToggleZen,
+    isZenMode
 }) => {
     const [entries, setEntries] = useState<ZipEntry[]>([]);
     const [treeData, setTreeData] = useState<TreeNode | null>(null);
@@ -286,10 +288,13 @@ const ZipViewer = ({
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
+                                // In zen, X exits full screen instead of closing
+                                // (and losing) the pane.
+                                if (isZenMode && onToggleZen) { onToggleZen(); return; }
                                 closeContentPane(nodeId, findNodePath(rootLayoutNode, nodeId));
                             }}
                             className="p-1 theme-hover rounded-full"
-                            title="Close"
+                            title={isZenMode ? 'Exit zen mode' : 'Close'}
                         >
                             <X size={14} />
                         </button>

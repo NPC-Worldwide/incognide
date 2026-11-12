@@ -8,7 +8,7 @@ import {
     Bot, Loader, ChevronDown, ChevronRight, X, Save, MessageSquare,
     Plus, Trash2, History, CheckCircle, XCircle, Tag,
     Brain, GitBranch, Edit, Search, Download, Filter,
-    Database, Zap, RefreshCw
+    Database, Zap, RefreshCw, Sparkles
 } from 'lucide-react';
 import { AgentEditor, JinxPatternList } from 'npcts';
 import ModelSelector from './ModelSelector';
