@@ -908,10 +908,13 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                         }
 
                         const autoSource = localStorage.getItem(AUTO_SOURCE_KEY);
-                        if (!result.reused && autoSource === 'true' && isSessionReady.current && terminalId) {
+                        // Only a plain shell can be handed a `source <profile>` command.
+                        // When the session IS a coding agent (exec'd directly), typing
+                        // that string would land in the agent's prompt as user input.
+                        if (!result.reused && result.shell === 'system' && autoSource === 'true' && isSessionReady.current && terminalId) {
                             const cmd = getShellProfileCommand();
                             writeToSession(cmd + '\n');
-                        } else if (!result.reused && autoSource !== 'false' && autoSource !== 'true' && result.shell === 'system') {
+                        } else if (!result.reused && result.shell === 'system' && autoSource !== 'false' && autoSource !== 'true') {
                             setShowShellPrompt(true);
                         }
                     } else {
