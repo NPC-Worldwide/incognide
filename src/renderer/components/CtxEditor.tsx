@@ -3,6 +3,11 @@ import { FileJson, X, Save, Plus, Trash2, Search, ChevronDown, Server, Database,
 import yaml from 'js-yaml';
 import AutosizeTextarea from './AutosizeTextarea';
 import ModelSelector from './ModelSelector';
+import {
+    mergeModelLists,
+    mergeProviderEntries,
+    shouldDiscoverProvider,
+} from '../utils/modelResolution';
 
 function preprocessJinja(content: string): string {
     return content.replace(
@@ -119,26 +124,14 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
 
     // Providers configured for this team/ctx plus the user's models.yaml. This is
     // the source of truth for which provider rows the selector should show.
-    const providerEntries = useMemo(() => {
-        const merged = new Map<string, any>();
-        const add = (p: any) => {
-            const key = String(p?.name || p?.provider || '').trim();
-            if (!key) return;
-            const models = Array.isArray(p?.models) ? p.models.filter(Boolean) : [];
-            const prev = merged.get(key);
-            if (!prev) {
-                merged.set(key, { ...p, name: key, models });
-            } else if (models.length > 0 && (prev.models || []).length === 0) {
-                merged.set(key, { ...prev, ...p, name: key, models });
-            }
-        };
-        const propProviders = Array.isArray(userModelsProviders) ? userModelsProviders : [];
-        for (const p of propProviders) add(p);
-        for (const p of localUserProviders) add(p);
-        const ctxProviders = Array.isArray(ctx.providers) ? ctx.providers : [];
-        for (const p of ctxProviders) add(p);
-        return Array.from(merged.values());
-    }, [userModelsProviders, localUserProviders, ctx.providers]);
+    const providerEntries = useMemo(
+        () => mergeProviderEntries(
+            Array.isArray(userModelsProviders) ? userModelsProviders : [],
+            localUserProviders,
+            Array.isArray(ctx.providers) ? ctx.providers : [],
+        ),
+        [userModelsProviders, localUserProviders, ctx.providers]
+    );
 
     const providerEntryKey = useMemo(
         () => providerEntries.map((p: any) => `${p.name}:${(p.models || []).length}`).join('|'),
@@ -152,7 +145,6 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
         let cancelled = false;
         (async () => {
             const next: Record<string, any[]> = {};
-            const LOCAL_PROVIDERS = new Set(['ollama', 'lmstudio', 'llamacpp', 'lms']);
             for (const prov of providerEntries) {
                 const key = prov.name;
                 if (!key) continue;
@@ -161,7 +153,7 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
                 // Discover when the provider lists nothing, and also for local
                 // providers whose listed models may be stale or invented
                 // (e.g. a hardcoded default written by an older build).
-                if (listed > 0 && !LOCAL_PROVIDERS.has(String(key).toLowerCase())) continue;
+                if (!shouldDiscoverProvider(key, listed)) continue;
                 try {
                     const res = await (window as any).api?.getProviderModels?.({
                         provider: key,
@@ -192,37 +184,29 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
     }, [isOpen, providerEntryKey]);
 
     // Backend/team models + models listed in models.yaml + discovered models.
-    const combinedModels = useMemo(() => {
-        const out: any[] = [];
-        const seen = new Set<string>();
-        const push = (m: any) => {
-            const value = typeof m === 'string' ? m : (m?.value || m?.id);
-            const provider = typeof m === 'string' ? null : (m?.provider || null);
-            if (!value) return;
-            const key = `${String(provider || '').toLowerCase()}::${value}`;
-            if (seen.has(key)) return;
-            seen.add(key);
-            out.push(
-                typeof m === 'string'
-                    ? { value, display_name: value, provider }
-                    : { ...m, value, display_name: m.display_name || value, provider }
-            );
-        };
-        for (const m of availableModels) push(m);
-        for (const prov of providerEntries) {
-            const key = prov.name;
-            const listed = Array.isArray(prov.models) ? prov.models : [];
-            const discovered = discoveredModels[key] || [];
-            // When live discovery succeeded, trust it over a stale listed entry.
-            const effective = discovered.length > 0 ? discovered : listed;
-            if (prov.model) push({ value: prov.model, display_name: `${prov.model} | ${key}`, provider: key });
-            for (const m of effective) {
-                if (typeof m === 'string') push({ value: m, display_name: `${m} | ${key}`, provider: key });
-                else push({ ...m, provider: key });
-            }
-        }
-        return out;
-    }, [availableModels, providerEntries, discoveredModels]);
+    const combinedModels = useMemo(
+        // Backend/team models first, then everything the configured providers
+        // expand to (live-discovered when available). Shared merge guarantees the
+        // same dedupe and ordering as the agent input.
+        () => mergeModelLists([
+            availableModels,
+            ...providerEntries.map((prov) => {
+                const key = prov.name;
+                const listed = Array.isArray(prov.models) ? prov.models : [];
+                const discovered = discoveredModels[key] || [];
+                const effective = discovered.length > 0 ? discovered : listed;
+                const group: any[] = [];
+                if (prov.model) {
+                    group.push({ value: prov.model, display_name: `${prov.model} | ${key}`, provider: key });
+                }
+                for (const m of effective) {
+                    group.push(typeof m === 'string' ? { value: m, provider: key } : { ...m, provider: key });
+                }
+                return group;
+            }),
+        ]),
+        [availableModels, providerEntries, discoveredModels]
+    );
 
     const loadModels = async () => {
         if (!teamPath) return;

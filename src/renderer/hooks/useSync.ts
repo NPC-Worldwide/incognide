@@ -198,6 +198,46 @@ export const useSync = (): UseSyncReturn => {
                 console.log('[SYNC] Nothing to push');
             }
 
+            // Agents sync as their own isolated attempt. The server decides which
+            // entity types it accepts, and this repo cannot see that contract, so
+            // a rejection here must not abort the message/bookmark/history push
+            // that already succeeded above.
+            try {
+                const agentExport = await (window as any).api?.agentsExport?.();
+                const agentRecords = Array.isArray(agentExport?.agents) ? agentExport.agents : [];
+                if (agentRecords.length > 0) {
+                    const agentChanges = [];
+                    for (const agent of agentRecords) {
+                        const { encrypted_data, iv } = await encryptEntity(agent, 'agent' as any, key);
+                        agentChanges.push({
+                            entity_type: 'agent',
+                            entity_id: `agent_${agent.id}`,
+                            encrypted_data,
+                            iv,
+                            action: 'upsert',
+                        });
+                    }
+                    const agentToken = await getToken();
+                    if (agentToken) {
+                        const agentResp = await fetch(`${API_BASE_URL}/api/sync/e2e/push`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${agentToken}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ device_id: deviceId, changes: agentChanges }),
+                        });
+                        if (agentResp.ok) {
+                            const r = await agentResp.json().catch(() => ({}));
+                            totalPushed += r.processed || 0;
+                            console.log(`[SYNC] Pushed ${agentChanges.length} agent record(s)`);
+                        } else {
+                            const body = await agentResp.text().catch(() => 'no body');
+                            console.warn(`[SYNC] Agent push rejected (${agentResp.status}): ${body.slice(0, 200)} — continuing without agent sync`);
+                        }
+                    }
+                }
+            } catch (agentErr: any) {
+                console.warn('[SYNC] Agent sync skipped:', agentErr?.message || agentErr);
+            }
+
             setSyncProgress(65);
             const pullToken = await getToken();
             if (!pullToken) throw new Error('No auth token for pull');
@@ -216,6 +256,7 @@ export const useSync = (): UseSyncReturn => {
                 const messages: any[] = [];
                 const bookmarks: any[] = [];
                 const history: any[] = [];
+                const agents: any[] = [];
 
                 for (const change of pullChanges) {
                     if (change.action === 'delete') continue;
@@ -225,6 +266,7 @@ export const useSync = (): UseSyncReturn => {
                             case 'message': messages.push(decrypted); break;
                             case 'bookmark': bookmarks.push(decrypted); break;
                             case 'history': history.push(decrypted); break;
+                            case 'agent': agents.push(decrypted); break;
                         }
                     } catch (e) {
                         console.error(`[SYNC] Failed to decrypt ${change.entity_id}:`, e);
@@ -234,6 +276,15 @@ export const useSync = (): UseSyncReturn => {
                 setSyncProgress(90);
                 const imported = await (window as any).api?.syncImportData?.({ messages, bookmarks, history });
                 console.log(`[SYNC] Imported:`, imported);
+
+                if (agents.length > 0) {
+                    const agentImported = await (window as any).api?.agentsImport?.({ agents });
+                    if (agentImported?.error) {
+                        console.warn('[SYNC] Agent import failed:', agentImported.error);
+                    } else {
+                        console.log(`[SYNC] Imported ${agents.length} agent record(s)`);
+                    }
+                }
             } else {
                 console.log('[SYNC] Nothing to pull');
             }

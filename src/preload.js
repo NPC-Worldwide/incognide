@@ -32,6 +32,14 @@ readPdfText: (filePath) =>
     open_directory_picker: () => ipcRenderer.invoke('open_directory_picker'),
 
     checkBinaries: (names) => ipcRenderer.invoke('check-binaries', names),
+
+    // Agent discovery / registry (issue #397)
+    agentsDiscover: () => ipcRenderer.invoke('agents:discover'),
+    agentsList: () => ipcRenderer.invoke('agents:list'),
+    agentsUpdate: (payload) => ipcRenderer.invoke('agents:update', payload),
+    agentsRemove: (id) => ipcRenderer.invoke('agents:remove', id),
+    agentsExport: () => ipcRenderer.invoke('agents:export'),
+    agentsImport: (payload) => ipcRenderer.invoke('agents:import', payload),
     detectProviderKeys: () => ipcRenderer.invoke('detect-provider-keys'),
     getKnownProviders: () => ipcRenderer.invoke('get-known-providers'),
 

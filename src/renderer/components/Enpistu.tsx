@@ -3960,7 +3960,10 @@ useEffect(() => {
         }
     }, [editedFileName, currentPath]);
 
-    const createNewTerminal = useCallback(async (shellType: 'system' | 'npcsh' | 'guac' | 'python3' = 'system') => {
+    // shellType is not limited to the built-in shells: the terminal-create menu
+    // also passes discovered agent commands ('codex', 'claude', ...). The main
+    // process turns those into "login shell + type the command".
+    const createNewTerminal = useCallback(async (shellType: string = 'system') => {
         const newTerminalId = `term_${generateId()}`;
         const connectionId = getActiveConnectionId();
         const paneBase = connectionId

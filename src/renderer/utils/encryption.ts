@@ -108,7 +108,8 @@ export type EncryptedEntityType =
     | 'message'
     | 'bookmark'
     | 'history'
-    | 'memory';
+    | 'memory'
+    | 'agent';
 
 export const ENCRYPTED_FIELDS: Record<EncryptedEntityType, string[]> = {
     conversation: ['conversation_id', 'title', 'directory_path', 'created_at', 'updated_at'],
@@ -121,7 +122,11 @@ export const ENCRYPTED_FIELDS: Record<EncryptedEntityType, string[]> = {
     ],
     bookmark: ['id', 'title', 'url', 'folder_path', 'is_global', 'timestamp'],
     history: ['id', 'title', 'url', 'folder_path', 'visit_count', 'last_visited'],
-    memory: ['content', 'metadata']
+    memory: ['content', 'metadata'],
+    // Agents sync only their portable identity/label/pin state. Discovery data
+    // such as local paths and credential presence is deliberately excluded by
+    // agents:export in the main process.
+    agent: ['id', 'label', 'command', 'pinned', 'custom']
 };
 
 export async function encryptEntity(

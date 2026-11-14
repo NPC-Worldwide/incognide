@@ -6,6 +6,7 @@ const { dialog } = require('electron');
 const { spawn, execSync } = require('child_process');
 const fetch = require('node-fetch');
 const yaml = require('js-yaml');
+const { detectTeamSources } = require('./teamSources');
 
 let INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
 
@@ -4960,6 +4961,21 @@ function register(ctx) {
     try {
       const filePath = path.join(INCOGNIDE_HOME, 'teams.yaml');
       await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+
+      // A markdown-only project has no npc_team dir of its own, but npcpy's
+      // loader requires the registered path to exist (it reads agents.md from
+      // dirname(team_path)), so registering one without creating the dir fails
+      // with "Team directory not found". Create it here.
+      for (const teamPath of Object.values(teams || {})) {
+        if (typeof teamPath !== 'string' || !teamPath.trim()) continue;
+        const abs = teamPath.replace(/^~(?=\/|$)/, os.homedir());
+        try {
+          await fsPromises.mkdir(abs, { recursive: true });
+        } catch (mkErr) {
+          if (mkErr.code !== 'EEXIST') throw mkErr;
+        }
+      }
+
       const content = yaml.dump({ teams: teams || {} }, { lineWidth: -1 });
       await fsPromises.writeFile(filePath, content, 'utf8');
       return { success: true };
@@ -4978,110 +4994,120 @@ function register(ctx) {
         registered = parsed?.teams || {};
       } catch {}
 
-      const registeredPaths = new Set(Object.values(registered).map((t) => {
-        return String(t || '').replace(/^~(?=\/|$)/, os.homedir());
-      }));
+      const expand = (t) => String(t || '').replace(/^~(?=\/|$)/, os.homedir());
+      const registeredPaths = new Set(Object.values(registered).map(expand));
 
-      const discovered = [];
-      const seen = new Set();
-
-      const checkDir = async (dir, name) => {
-        if (seen.has(dir)) return;
-        if (registeredPaths.has(dir)) return;
+      const isAlreadyRegistered = (p) => {
+        if (registeredPaths.has(p)) return true;
         for (const rp of registeredPaths) {
-          if (dir.startsWith(rp + path.sep) || rp.startsWith(dir + path.sep)) return;
+          if (p.startsWith(rp + path.sep) || rp.startsWith(p + path.sep)) return true;
         }
+        return false;
+      };
 
-        const dirsToCheck = [dir];
-        const npcTeamDir = path.join(dir, 'npc_team');
-        try { await fsPromises.access(npcTeamDir); if (!seen.has(npcTeamDir) && !registeredPaths.has(npcTeamDir)) dirsToCheck.push(npcTeamDir); } catch {}
-
-        for (const d of dirsToCheck) {
-          if (registeredPaths.has(d) || seen.has(d)) continue;
-          seen.add(d);
-
-          let hasNpcs = false, hasCtx = false, hasJinxes = false, hasAgents = false, npcCount = 0, ctxName = '';
-          try {
-            const entries = await fsPromises.readdir(d);
-            const npcFiles = entries.filter(f => f.endsWith('.npc'));
-            const ctxFiles = entries.filter(f => f.endsWith('.ctx'));
-            const hasMcpJson = entries.some(f => f === '.mcp.json' || f === '.mcp_servers.json' || f === 'mcp_servers.json');
-
-            if (npcFiles.length > 0) { hasNpcs = true; npcCount = npcFiles.length; }
-            if (ctxFiles.length > 0) { hasCtx = true; ctxName = ctxFiles[0].replace('.ctx', ''); }
-            try { await fsPromises.access(path.join(d, 'jinxes')); hasJinxes = true; } catch {}
-            try { await fsPromises.access(path.join(d, 'agents')); hasAgents = true; } catch {}
-            try { const agMs = entries.filter(f => f.toLowerCase() === 'agents.md'); if (agMs.length > 0) hasAgents = true; } catch {}
-
-            if (hasNpcs || hasCtx || hasJinxes || hasAgents || hasMcpJson) {
-              discovered.push({ name: ctxName || name, path: d, hasNpcs, hasJinxes, hasCtx, hasAgents, npcCount });
-            }
-          } catch {}
+      // Detection lives in teamSources.js so the UI and the scan agree on what
+      // counts as a team, and agree with npcpy's own loader about *which path*
+      // to register (agents.md / agents/ are read from dirname(team_path)).
+      const candidates = [];
+      const consider = (dir) => {
+        for (const c of detectTeamSources(dir)) {
+          if (isAlreadyRegistered(c.path)) continue;
+          candidates.push(c);
         }
       };
 
       const scanDirs = [];
-      if (typeof scanInput === 'string' && scanInput) {
-        scanDirs.push(scanInput);
-      } else if (Array.isArray(scanInput)) {
-        for (const p of scanInput) {
-          if (typeof p === 'string' && p) scanDirs.push(p);
-        }
+      if (typeof scanInput === 'string' && scanInput) scanDirs.push(scanInput);
+      else if (Array.isArray(scanInput)) {
+        for (const p of scanInput) if (typeof p === 'string' && p) scanDirs.push(p);
       }
 
-      for (const dir of scanDirs) {
-        const abs = dir.replace(/^~(?=\/|$)/, os.homedir());
-        await checkDir(abs, path.basename(abs));
-        try {
-          const parent = path.dirname(abs);
-          if (parent && parent !== abs) await checkDir(parent, path.basename(parent));
-        } catch {}
-      }
-
-      const wellKnown = [
-        { name: 'incognide', dir: path.join(INCOGNIDE_HOME, 'npc_team') },
-        { name: 'home', dir: os.homedir() },
+      const knownRoots = [
+        path.join(INCOGNIDE_HOME, 'npc_team'),
+        path.join(os.homedir(), '.npcsh', 'npc_team'),
       ];
-      for (const wk of wellKnown) {
-        await checkDir(wk.dir, wk.name);
-      }
+      for (const k of knownRoots) consider(k);
 
       try {
-        const incognideEntries = await fsPromises.readdir(INCOGNIDE_HOME);
-        for (const entry of incognideEntries) {
+        for (const entry of await fsPromises.readdir(INCOGNIDE_HOME)) {
           if (entry.startsWith('.') || entry === 'npc_team') continue;
-          const subTeamDir = path.join(INCOGNIDE_HOME, entry, 'npc_team');
-          await checkDir(subTeamDir, entry);
+          consider(path.join(INCOGNIDE_HOME, entry, 'npc_team'));
+          consider(path.join(INCOGNIDE_HOME, entry));
         }
       } catch {}
 
+      // Project roots: detectTeamSources already probes a child npc_team, so a
+      // single call per root covers .npc/.ctx teams and markdown declarations.
       for (const dir of scanDirs) {
-        const abs = dir.replace(/^~(?=\/|$)/, os.homedir());
+        const abs = expand(dir);
+        consider(abs);
         try {
-          const entries = await fsPromises.readdir(abs);
-          for (const entry of entries) {
+          for (const entry of await fsPromises.readdir(abs)) {
             if (entry.startsWith('.') || entry === 'node_modules') continue;
-            const subTeamDir = path.join(abs, entry, 'npc_team');
-            await checkDir(subTeamDir, entry);
-            const directDir = path.join(abs, entry);
-            await checkDir(directDir, entry);
+            consider(path.join(abs, entry));
           }
         } catch {}
       }
 
       if (scanDirs.length === 0) {
         try {
-          const home = os.homedir();
-          const entries = await fsPromises.readdir(home);
-          for (const entry of entries) {
+          for (const entry of await fsPromises.readdir(os.homedir())) {
             if (entry.startsWith('.') || entry === 'node_modules') continue;
-            const subTeamDir = path.join(home, entry, 'npc_team');
-            await checkDir(subTeamDir, entry);
-            const directDir = path.join(home, entry);
-            await checkDir(directDir, entry);
+            consider(path.join(os.homedir(), entry, 'npc_team'));
           }
         } catch {}
       }
+
+      // De-dupe. Two candidates can describe the same agents from different
+      // angles: `X/npc_team` (markdown_team, reads X/agents.md) and
+      // `X/agents` (markdown_team_child, whose parent declares them). Keep the
+      // one a user would more naturally register.
+      const KIND_RANK = { npc_team: 0, markdown_team: 1, markdown_team_child: 2 };
+      const bySignature = new Map();
+      for (const c of candidates) {
+        // same agent set from the same project == same team
+        const projectRoot = c.kind === 'markdown_team'
+          ? path.dirname(c.path)                    // X/npc_team -> X
+          : path.dirname(c.path);                   // X/agents  -> X
+        const sig = `${projectRoot}::${(c.agents || []).slice().sort().join(',')}`;
+        const prev = bySignature.get(sig);
+        const better = !prev
+          || (KIND_RANK[c.kind] ?? 9) < (KIND_RANK[prev.kind] ?? 9);
+        if (better) bySignature.set(sig, c);
+      }
+      // Same path can be described twice (a dir with a .ctx *and* an agents/
+      // sibling). Keep the record that knows about more agents, so the UI can
+      // show what will actually load.
+      const byPath = new Map();
+      for (const c of bySignature.values()) {
+        const prev = byPath.get(c.path);
+        if (!prev) { byPath.set(c.path, c); continue; }
+        const richer = (c.agents || []).length > (prev.agents || []).length ? c : prev;
+        const poorer = richer === c ? prev : c;
+        byPath.set(c.path, {
+          ...poorer,
+          ...richer,
+          agents: richer.agents,
+          npcCount: richer.npcCount || poorer.npcCount,
+          kind: richer.kind,
+          reason: prev.reason && c.reason && prev.reason !== c.reason
+            ? `${poorer.reason}; ${richer.reason}` : richer.reason,
+        });
+      }
+
+      const discovered = Array.from(byPath.values()).map((c) => ({
+        name: c.name,
+        path: c.path,
+        kind: c.kind,
+        npcCount: c.npcCount,
+        agents: c.agents || [],
+        agentsMd: c.agentsMd || null,
+        agentsDir: c.agentsDir || null,
+        reason: c.reason,
+        // The module decides this: a markdown team needs its child npc_team
+        // directory to exist before npcpy can load it.
+        needsCreate: !!c.needsCreate,
+      }));
 
       return { discovered };
     } catch (err) {
