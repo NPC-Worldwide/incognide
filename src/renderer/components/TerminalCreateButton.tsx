@@ -2,7 +2,25 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Terminal, Sparkles, Bot, ChevronDown, Plus, Star, MessageSquare, Globe, GripVertical } from 'lucide-react';
 import { useAiEnabled } from './AiFeatureContext';
 
-const KNOWN_AGENTS = ['npcsh', 'opencode', 'nanocoder', 'gemini', 'claude', 'codex', 'qwen', 'hermes', 'pi'];
+// Fallback used only until discovery returns. Real values now come from the
+// main process (src/ipc/agents.js), which scans each agent's home directory and
+// merges a user-editable registry - so agents we don't hardcode still appear.
+const FALLBACK_AGENT_COMMANDS = ['npcsh', 'opencode', 'nanocoder', 'gemini', 'claude', 'codex', 'qwen', 'hermes', 'pi'];
+
+// Actions already provided by `fixedActions`; discovery must not duplicate them.
+const RESERVED_ACTION_IDS = new Set(['chat', 'agent', 'browser', 'system', 'npcsh', 'guac']);
+
+interface DiscoveredAgent {
+    id: string;
+    label: string;
+    command: string;
+    installed?: boolean;
+    configured?: boolean;
+    pinned?: boolean;
+    custom?: boolean;
+    detectedModel?: string | null;
+    detectedProvider?: string | null;
+}
 
 interface TerminalCreateButtonProps {
     createNewTerminal?: (shellType: string) => void;
@@ -21,15 +39,6 @@ interface Action {
 
 const QUICK_ACTIONS_KEY = 'incognide_quickActions';
 const DEFAULT_TERMINAL_TYPE_KEY = 'incognide_defaultNewTerminalType';
-const CUSTOM_AGENTS_KEY = 'incognide_terminalAgents';
-
-const loadCustomAgents = (): Array<{ name: string; command: string }> => {
-    try {
-        return JSON.parse(localStorage.getItem(CUSTOM_AGENTS_KEY) || '[]');
-    } catch {
-        return [];
-    }
-};
 
 const loadQuickActions = (): string[] => {
     try {
@@ -50,7 +59,7 @@ const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTe
     });
     const [terminalDropdownOpen, setTerminalDropdownOpen] = useState(false);
     const [installedAgents, setInstalledAgents] = useState<Record<string, boolean>>({});
-    const [customAgents, setCustomAgents] = useState<Array<{ name: string; command: string }>>(loadCustomAgents);
+    const [discoveredAgents, setDiscoveredAgents] = useState<DiscoveredAgent[]>([]);
     const [showAddAgentPrompt, setShowAddAgentPrompt] = useState(false);
     const [newAgentName, setNewAgentName] = useState('');
     const [newAgentCommand, setNewAgentCommand] = useState('');
@@ -105,11 +114,23 @@ const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTe
         if (!terminalDropdownOpen) return;
         (async () => {
             try {
-                const agents = loadCustomAgents();
-                setCustomAgents(agents);
-                const allCmds = [...KNOWN_AGENTS, ...agents.map((a: any) => a.command)];
-                const r = await (window as any).api?.checkBinaries?.(allCmds);
-                setInstalledAgents(r || {});
+                // Ask the main process for the full picture (it merges the
+                // catalog, each agent's home dir, npcsh's registry, and the
+                // user-editable `agents` table). Degrade to a plain binary
+                // check if that is unavailable.
+                const discovered = await (window as any).api?.agentsDiscover?.();
+                if (discovered?.agents?.length) {
+                    setDiscoveredAgents(discovered.agents);
+                    const installed: Record<string, boolean> = {};
+                    for (const a of discovered.agents) {
+                        if (a.installed) installed[a.command] = true;
+                    }
+                    setInstalledAgents(installed);
+                } else {
+                    const allCmds = [...FALLBACK_AGENT_COMMANDS];
+                    const r = await (window as any).api?.checkBinaries?.(allCmds);
+                    setInstalledAgents(r || {});
+                }
             } catch {}
         })();
     }, [terminalDropdownOpen]);
@@ -141,21 +162,37 @@ const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTe
     }, [aiEnabled]);
 
     const allActions = useMemo(() => {
-        const actions = [...fixedActions];
+        const actions: Action[] = [...fixedActions];
+        const seen = new Set(actions.map((a) => a.id));
+        const push = (a: Action) => {
+            if (seen.has(a.id)) return;
+            seen.add(a.id);
+            actions.push(a);
+        };
         if (aiEnabled) {
-            for (const cmd of KNOWN_AGENTS) {
-                if (installedAgents[cmd]) {
-                    actions.push({ id: cmd, label: cmd, kind: 'terminal', installed: true });
+            if (discoveredAgents.length > 0) {
+                // Installed, configured, or user-added agents. `push` dedupes by
+                // command so a discovery entry and a user entry cannot collide.
+                for (const agent of discoveredAgents) {
+                    if (RESERVED_ACTION_IDS.has(agent.id)) continue;
+                    if (!agent.installed && !agent.configured && !agent.custom) continue;
+                    push({
+                        id: agent.command,
+                        label: agent.label || agent.command,
+                        kind: 'terminal',
+                        installed: !!agent.installed,
+                    });
                 }
-            }
-            for (const agent of customAgents) {
-                if (installedAgents[agent.command]) {
-                    actions.push({ id: agent.command, label: agent.name, kind: 'terminal', installed: true });
+            } else {
+                for (const cmd of FALLBACK_AGENT_COMMANDS) {
+                    if (installedAgents[cmd]) {
+                        push({ id: cmd, label: cmd, kind: 'terminal', installed: true });
+                    }
                 }
             }
         }
         return actions;
-    }, [fixedActions, installedAgents, customAgents, aiEnabled]);
+    }, [fixedActions, installedAgents, discoveredAgents, aiEnabled]);
 
     const actionById = useMemo(() => {
         const map = new Map<string, Action>();
@@ -196,6 +233,13 @@ const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTe
             case 'npcsh': return <Sparkles size={size} className={`text-purple-400 ${colorClass}`} />;
             default: return <Terminal size={size} className={`text-cyan-400 ${colorClass}`} />;
         }
+    };
+
+    // Discovered agents may report the model they are configured to use
+    // (e.g. codex's config.toml). Shown as a hint in the dropdown.
+    const detectedModelFor = (command: string): string | null => {
+        const agent = discoveredAgents.find((a) => a.command === command);
+        return agent?.detectedModel || null;
     };
 
     const primaryActionId = quickActions[0] || 'system';
@@ -290,6 +334,11 @@ const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTe
                                 {canDrag && <GripVertical size={11} className="text-gray-500 cursor-grab active:cursor-grabbing" />}
                                 {getActionIcon(action.id, 11)}
                                 <span>{action.label}</span>
+                                {detectedModelFor(action.id) && (
+                                    <span className="text-[9px] text-gray-500 truncate max-w-[90px]" title={detectedModelFor(action.id) || ''}>
+                                        {detectedModelFor(action.id)}
+                                    </span>
+                                )}
                                 {pinned && <Star size={8} className="text-yellow-400 ml-auto" />}
                             </button>
                         );
@@ -311,12 +360,19 @@ const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTe
                                     onClick={async () => {
                                         if (!newAgentName || !newAgentCommand) return;
                                         try {
-                                            const existing = JSON.parse(localStorage.getItem(CUSTOM_AGENTS_KEY) || '[]');
-                                            const updated = [...existing.filter((a: any) => a.command !== newAgentCommand), { name: newAgentName, command: newAgentCommand }];
-                                            localStorage.setItem(CUSTOM_AGENTS_KEY, JSON.stringify(updated));
-                                            setCustomAgents(updated);
+                                            // Persist to the `agents` table (not
+                                            // localStorage) so the entry is
+                                            // durable and syncable.
+                                            await (window as any).api?.agentsUpdate?.({
+                                                id: newAgentCommand,
+                                                label: newAgentName,
+                                                command: newAgentCommand,
+                                                custom: true,
+                                            });
                                             const r = await (window as any).api?.checkBinaries?.([newAgentCommand]);
                                             setInstalledAgents(prev => ({ ...prev, ...(r || {}) }));
+                                            const refreshed = await (window as any).api?.agentsDiscover?.();
+                                            if (refreshed?.agents?.length) setDiscoveredAgents(refreshed.agents);
                                         } catch {}
                                         setNewAgentName(''); setNewAgentCommand(''); setShowAddAgentPrompt(false);
                                     }}

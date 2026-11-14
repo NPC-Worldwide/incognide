@@ -1,4 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import {
+    mergeModelLists,
+    mergeProviderEntries,
+    providerKeyOf,
+    shouldDiscoverProvider,
+} from '../utils/modelResolution';
 
 const LOAD_RETRY_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000];
 
@@ -113,7 +119,7 @@ export function useModelSelection() {
         return [{ value: m, display_name: `${m} | ${p}`, provider: p, context_window: providerModelContext[p]?.[m] ?? null }];
     }, [currentNpcObject, teamConfigs, providerModelContext]);
 
-    const providerKey = (prov: any) => prov?.name || prov?.provider || '';
+    const providerKey = providerKeyOf;
 
     const ctxProviders = useMemo(() => {
         // Prefer the live teamConfigs state (updated when the .ctx file changes) over the
@@ -121,8 +127,9 @@ export function useModelSelection() {
         const tConf = (currentNpcObject?.team ? teamConfigs[currentNpcObject.team] : null) || currentNpcObject?._teamConfig;
         const teamProviders = Array.isArray(tConf?.providers) ? tConf.providers : [];
         const userProviders = Array.isArray(userModelsConfig.providers) ? userModelsConfig.providers : [];
-        if (userProviders.length === 0) return teamProviders;
-        return [...teamProviders, ...userProviders];
+        // Same gap-filling merge the team view uses, so a provider configured in
+        // both places is not listed twice with different model sets.
+        return mergeProviderEntries(teamProviders, userProviders);
     }, [currentNpcObject, teamConfigs, userModelsConfig]);
 
     useEffect(() => {
@@ -138,7 +145,9 @@ export function useModelSelection() {
                 const pKey = providerKey(prov);
                 if (!pKey) continue;
                 const allowedModels = Array.isArray(prov.models) ? prov.models : [];
-                if (allowedModels.length > 0) continue;
+                // Local providers (ollama &c) keep a hardcoded default list from
+                // older builds; always re-discover those instead of trusting it.
+                if (!shouldDiscoverProvider(pKey, allowedModels.length)) continue;
                 if (fetchedProviderModelsRef.current[pKey] !== undefined) continue;
                 nextLoading[pKey] = true;
                 fetches.push((async () => {
@@ -199,45 +208,31 @@ export function useModelSelection() {
     }, [ctxProviders]);
 
     const availableModelsFromTeamCtx = useMemo(() => {
-        const models: any[] = [];
-        const seenValues = new Set<string>();
+        const perProvider: any[][] = [];
         for (const prov of ctxProviders) {
             const pKey = providerKey(prov);
             if (!pKey) continue;
             const allowedModels = Array.isArray(prov.models) ? prov.models : [];
             const fetched = fetchedProviderModels[pKey] || [];
             const ctxById = providerModelContext[pKey] || {};
-            const baseModel = prov.model;
-            const effectiveModels = allowedModels.length > 0 ? allowedModels : fetched;
-            if (baseModel) {
-                const key = `${pKey}::${baseModel}`;
-                if (!seenValues.has(key)) {
-                    seenValues.add(key);
-                    models.push({ value: baseModel, display_name: `${baseModel} | ${pKey}`, provider: pKey, context_window: ctxById[baseModel] ?? null });
-                }
+            const effectiveModels = fetched.length > 0 ? fetched : allowedModels;
+            const group: any[] = [];
+            if (prov.model) {
+                group.push({ value: prov.model, display_name: `${prov.model} | ${pKey}`, provider: pKey, context_window: ctxById[prov.model] ?? null });
             }
             for (const m of effectiveModels) {
-                const key = `${pKey}::${m}`;
-                if (!seenValues.has(key)) {
-                    seenValues.add(key);
-                    models.push({ value: m, display_name: `${m} | ${pKey}`, provider: pKey, context_window: ctxById[m] ?? null });
-                }
+                group.push({ value: m, display_name: `${m} | ${pKey}`, provider: pKey, context_window: ctxById[m] ?? null });
             }
+            perProvider.push(group);
         }
-        return models;
+        // Shared dedupe so casing ("Ollama" vs "ollama") cannot duplicate a model.
+        return mergeModelLists(perProvider);
     }, [ctxProviders, fetchedProviderModels, providerModelContext]);
 
-    const effectiveAvailableModels = useMemo(() => {
-        const combined: any[] = [];
-        const seen = new Set<string>();
-        for (const m of [...npcScopedModels, ...availableModelsFromTeamCtx]) {
-            const key = `${m.provider}::${m.value}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            combined.push(m);
-        }
-        return combined;
-    }, [availableModelsFromTeamCtx, npcScopedModels]);
+    const effectiveAvailableModels = useMemo(
+        () => mergeModelLists([npcScopedModels, availableModelsFromTeamCtx]),
+        [availableModelsFromTeamCtx, npcScopedModels]
+    );
 
     useEffect(() => {
         setAvailableModels(effectiveAvailableModels);

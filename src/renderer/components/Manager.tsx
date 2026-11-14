@@ -717,30 +717,50 @@ const TeamsTab: React.FC<{ workspacePaths?: string[]; windowPaths?: string[] }> 
   const [newName, setNewName] = useState('');
   const [newPath, setNewPath] = useState('');
 
+  // Guards against an in-flight read overwriting a newer local edit: any read
+  // started before a write is discarded once that write has landed.
+  const readSeqRef = useRef(0);
   const load = async () => {
+    const seq = ++readSeqRef.current;
     setLoading(true);
     setError(null);
     try {
       const result = await api.teamsRead?.();
+      if (seq !== readSeqRef.current) return; // superseded by a newer read/write
       if (result?.error) setError(result.error);
       else setTeams(result?.teams || {});
     } catch (err: any) {
-      setError(err?.message || 'Failed to load teams');
+      if (seq === readSeqRef.current) setError(err?.message || 'Failed to load teams');
+    } finally {
+      if (seq === readSeqRef.current) setLoading(false);
     }
-    setLoading(false);
   };
 
+  // Writes, then re-reads so the list reflects what actually persisted.
+  // The optimistic setTeams() makes the row appear instantly; the read-back
+  // keeps the UI honest (the main process normalises paths on read) and makes a
+  // failed write visible instead of leaving a phantom row on screen.
   const save = async (updated: Record<string, string>) => {
     setError(null);
+    setTeams(updated);
     try {
       const result = await api.teamsWrite?.(updated);
       if (result?.error) {
+        // Reconcile first: load() clears the error state at its start, so the
+        // reason must be set afterwards or it would be wiped immediately.
+        await load();
         setError(result.error);
-      } else {
-        setTeams(updated);
+        return false;
       }
+      // Reconcile against disk only when the bridge confirmed a write. If it is
+      // absent (non-Electron context) reloading returns {} and would wipe the
+      // row we just added.
+      if (result?.success) await load();
+      return true;
     } catch (err: any) {
+      await load();
       setError(err?.message || 'Failed to save teams');
+      return false;
     }
   };
 
@@ -759,27 +779,47 @@ const TeamsTab: React.FC<{ workspacePaths?: string[]; windowPaths?: string[] }> 
     setScanning(false);
   };
 
-  const addTeam = () => {
+  const addTeam = async () => {
     const key = newName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
-    if (!key || !newPath.trim()) return;
-    const updated = { ...teams, [key]: newPath.trim() };
-    save(updated);
-    setNewName('');
-    setNewPath('');
+    if (!newPath.trim()) {
+      setError('Team path is required.');
+      return;
+    }
+    if (!key) {
+      // A name made entirely of stripped characters would otherwise fail
+      // silently: no error, no row, nothing to explain why.
+      setError('Team name must contain at least one letter, number, or underscore.');
+      return;
+    }
+    if (teams[key]) {
+      setError(`A team named "${key}" is already registered.`);
+      return;
+    }
+    const ok = await save({ ...teams, [key]: newPath.trim() });
+    if (ok) {
+      setNewName('');
+      setNewPath('');
+    }
   };
 
-  const removeTeam = (key: string) => {
+  const removeTeam = async (key: string) => {
     const updated = { ...teams };
     delete updated[key];
-    save(updated);
+    await save(updated);
   };
 
-  const registerDiscovered = (team: any) => {
+  const registerDiscovered = async (team: any) => {
     const key = (team.name || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
-    if (!key || teams[key]) return;
-    const updated = { ...teams, [key]: team.path };
-    save(updated);
-    setDiscovered(prev => prev.filter(t => t.path !== team.path));
+    if (!key) {
+      setError(`Could not derive a team name from "${team.name || team.path}".`);
+      return;
+    }
+    if (teams[key]) {
+      setError(`A team named "${key}" is already registered.`);
+      return;
+    }
+    const ok = await save({ ...teams, [key]: team.path });
+    if (ok) setDiscovered(prev => prev.filter(t => t.path !== team.path));
   };
 
   useEffect(() => { load(); }, []);
@@ -873,9 +913,30 @@ const TeamsTab: React.FC<{ workspacePaths?: string[]; windowPaths?: string[] }> 
           {discovered.map((team, i) => (
             <div key={i} className="flex items-center justify-between px-3 py-2 rounded theme-bg-tertiary border theme-border text-xs">
               <div className="flex-1 min-w-0">
-                <div className="font-medium theme-text-primary truncate">{team.name || 'Unknown'}</div>
+                <div className="font-medium theme-text-primary truncate flex items-center gap-1.5">
+                  {team.name || 'Unknown'}
+                  {/* What kind of declaration this is. npcpy loads .npc/.ctx from
+                      the registered dir, but agents.md / agents/ from its PARENT,
+                      so these are different animals and worth labelling. */}
+                  <span className="px-1 py-0.5 rounded text-[9px] font-normal bg-blue-600/20 text-blue-300">
+                    {team.kind === 'markdown_team' ? 'agents.md / agents'
+                      : team.kind === 'markdown_team_child' ? 'markdown agents'
+                      : 'npc_team'}
+                  </span>
+                  {team.needsCreate && (
+                    <span className="px-1 py-0.5 rounded text-[9px] font-normal bg-amber-600/20 text-amber-300" title="Registering creates this directory">
+                      creates dir
+                    </span>
+                  )}
+                </div>
                 <div className="theme-text-muted truncate">{team.path}</div>
-                <div className="theme-text-muted">{team.npcCount || 0} NPC{team.npcCount !== 1 ? 's' : ''}</div>
+                <div className="theme-text-muted truncate">
+                  {team.npcCount || 0} NPC{(team.npcCount || 0) !== 1 ? 's' : ''}
+                  {(team.agents || []).length > 0 && (
+                    <span className="ml-1 opacity-70">· {team.agents.slice(0, 5).join(', ')}{team.agents.length > 5 ? '…' : ''}</span>
+                  )}
+                </div>
+                {team.reason && <div className="theme-text-muted opacity-60 truncate">{team.reason}</div>}
               </div>
               <button
                 onClick={() => registerDiscovered(team)}
