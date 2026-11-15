@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const { dialog, shell } = require('electron');
 const sqlite3 = require('sqlite3');
+const syncCategories = require('./syncCategories');
 
 const DEFAULT_DB_PATH = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
 
@@ -113,17 +114,17 @@ const executeOnDatabase = async (connConfig, query, params = []) => {
       const db = new sqlite3.Database(connConfig.path, mode, (err) => {
         if (err) return reject(err);
 
+        // Resolve only once the handle is released. sqlite3's close() is async:
+        // settling first leaves the file briefly locked, which surfaces as
+        // EBUSY on Windows when the caller immediately removes the database.
         if (isReadQuery) {
           db.all(query, params, (err, rows) => {
-            db.close();
-            if (err) return reject(err);
-            resolve(rows);
+            db.close(() => (err ? reject(err) : resolve(rows)));
           });
         } else {
           db.run(query, params, function(err) {
-            db.close();
-            if (err) return reject(err);
-            resolve({ lastID: this.lastID, changes: this.changes });
+            const result = { lastID: this.lastID, changes: this.changes };
+            db.close(() => (err ? reject(err) : resolve(result)));
           });
         }
       });
@@ -901,71 +902,372 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('sync:export-data', async (_, { since, fullDump }) => {
-    const sinceTs = (fullDump || !since) ? '1970-01-01T00:00:00.000Z' : since;
-    return new Promise((resolve, reject) => {
+  /**
+   * Export local data for sync, filtered by the user's category selection.
+   *
+   * The category list lives in src/ipc/syncCategories.js so the account panel,
+   * the export, and the import all agree on what exists. A disabled category is
+   * simply never queried, so opting out also means the data never leaves the
+   * machine.
+   *
+   * `messages` remains the key name for conversation rows because the renderer's
+   * existing encryption/push loop consumes it; splitting agent transcripts into
+   * their own top-level key would require a parallel push path for no benefit.
+   * Which agent rows are included is decided by the selection instead.
+   */
+  /**
+   * Read/write the sync category selection.
+   *
+   * Stored in its own table rather than .incogniderc, which is line-oriented
+   * KEY=value and awkward for a structured map.
+   */
+  const SYNC_SETTINGS_TABLE = `
+    CREATE TABLE IF NOT EXISTS sync_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+  `;
+
+  const readSyncCategorySelection = async () =>
+    new Promise((resolve) => {
       const db = new sqlite3.Database(dbPath);
+      db.all(SYNC_SETTINGS_TABLE, () => {
+        db.get(`SELECT value FROM sync_settings WHERE key = 'categories'`, [], (err, row) => {
+          db.close();
+          if (err || !row) return resolve(syncCategories.defaultSelection());
+          try {
+            resolve(syncCategories.normalizeSelection(JSON.parse(row.value)));
+          } catch {
+            resolve(syncCategories.defaultSelection());
+          }
+        });
+      });
+    });
 
-      const result = { conversations: [], messages: [], bookmarks: [], history: [] };
-      console.log(`[SYNC EXPORT] dbPath=${dbPath} since=${sinceTs} fullDump=${fullDump}`);
+  const setSyncCategorySelection = async (selection) =>
+    new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(dbPath);
+      db.all(SYNC_SETTINGS_TABLE, () => {
+        db.run(
+          `INSERT INTO sync_settings (key, value) VALUES ('categories', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+          [JSON.stringify(selection)],
+          (err) => {
+            db.close();
+            if (err) return reject(err);
+            resolve(true);
+          }
+        );
+      });
+    });
 
-      db.all(
-        `SELECT DISTINCT conversation_id, directory_path,
-                MIN(timestamp) as created_at, MAX(timestamp) as updated_at
-         FROM conversation_history
-         WHERE timestamp > ?
-         GROUP BY conversation_id
-         ORDER BY updated_at DESC`,
-        [sinceTs],
-        (err, rows) => {
-          if (err) console.error('[SYNC EXPORT] conversations query error:', err.message);
-          else if (rows) result.conversations = rows;
+  ipcMain.handle('sync:get-categories-selection', async () => {
+    try {
+      const selection = await readSyncCategorySelection();
+      return { selection, error: null };
+    } catch (err) {
+      return { selection: syncCategories.defaultSelection(), error: err.message };
+    }
+  });
 
-          db.all(
-            `SELECT *
-             FROM conversation_history
-             WHERE timestamp > ?
-             ORDER BY timestamp ASC`,
-            [sinceTs],
-            (err2, msgRows) => {
-              if (err2) console.error('[SYNC EXPORT] messages query error:', err2.message);
-              else if (msgRows) result.messages = msgRows;
+  ipcMain.handle('sync:export-data', async (_, { since, fullDump, categories } = {}) => {
+    const sinceTs = (fullDump || !since) ? '1970-01-01T00:00:00.000Z' : since;
 
-              db.all(
-                `SELECT id, title, url, folder_path, is_global, timestamp
-                 FROM bookmarks WHERE timestamp > ? ORDER BY timestamp DESC`,
-                [sinceTs],
-                (err3, bmRows) => {
-                  if (err3) console.error('[SYNC EXPORT] bookmarks query error:', err3.message);
-                  else if (bmRows) result.bookmarks = bmRows;
+    /**
+     * Compare timestamps format-agnostically.
+     *
+     * Timestamps in these tables are NOT consistently ISO-8601. Rows written by
+     * npcsh (and by older Incognide builds that shared a database with it) look
+     * like `2026-11-15 18:12:26` — space separator, no zone. Everything newer is
+     * `2026-11-15T18:12:26.123Z`. SQLite compares those as *strings*, and at
+     * position 10 a space (0x20) sorts below 'T' (0x54), so a space-format row
+     * always reads as older than an ISO cursor. The result was that ~29k npcsh
+     * rows and 3.9k browser history rows were NEVER selected by an incremental
+     * sync — silently.
+     *
+     * datetime() normalises all three observed shapes (`... 18:12:26`,
+     * `...T18:12:26.123Z`, `...T18:12:26.123`) to the same comparable value, so
+     * this repairs already-ingested rows without needing a re-ingest.
+     */
+    const selection = syncCategories.normalizeSelection(categories);
+    const enabled = new Set(syncCategories.enabledCategories(selection));
 
-                  db.all(
-                    `SELECT id, title, url, folder_path, visit_count, last_visited
-                     FROM browser_history
-                     WHERE last_visited > ?
-                     ORDER BY last_visited DESC`,
-                    [sinceTs],
-                    (err4, histRows) => {
-                      db.close();
-                      if (err4) console.error('[SYNC EXPORT] history query error:', err4.message);
-                      else if (histRows) result.history = histRows;
-                      console.log(`[SYNC EXPORT] counts: conversations=${result.conversations.length} messages=${result.messages.length} bookmarks=${result.bookmarks.length} history=${result.history.length}`);
-                      resolve(result);
-                    }
-                  );
-                }
-              );
+    return new Promise((resolve) => {
+      const db = new sqlite3.Database(dbPath);
+      const result = {
+        conversations: [], messages: [], bookmarks: [], history: [],
+        // Additional category payloads. Kept as separate arrays so the renderer
+        // can encrypt each with the right field list.
+        pdfHighlights: [], pdfDrawings: [], kgEntities: [],
+        kgRelations: [], kgTriples: [],
+        fileIndex: [], agents: [],
+        categories: selection,
+      };
+
+      // Run each category's query set; a missing table or error yields empty
+      // arrays rather than aborting the whole sync.
+      const jobs = [];
+
+      const query = (sql, params = []) =>
+        new Promise((res) => {
+          db.all(sql, params, (err, rows) => {
+            if (err) {
+              // Tables differ between installs; absence is not a failure.
+              if (!/no such table/i.test(err.message)) {
+                console.error('[SYNC EXPORT] query error:', err.message);
+              }
+              return res([]);
             }
-          );
-        }
-      );
+            res(rows || []);
+          });
+        });
+
+      if (enabled.has('conversations') || enabled.has('agent_transcripts') || enabled.has('npcsh_history')) {
+        jobs.push((async () => {
+          // One query per included slice, then merge with de-duplication by
+          // message_id so a row matched by two categories is not sent twice.
+          const slices = [];
+
+          if (enabled.has('conversations')) {
+            // Native conversations and any transcript category not separately
+            // requested. agent_transcripts/npcsh_history filter below.
+            if (enabled.has('agent_transcripts') && enabled.has('npcsh_history')) {
+              slices.push({ sql: `SELECT * FROM conversation_history WHERE datetime(timestamp) > datetime(?) ORDER BY timestamp ASC`, params: [sinceTs] });
+            } else if (enabled.has('agent_transcripts')) {
+              slices.push({ sql: `SELECT * FROM conversation_history WHERE datetime(timestamp) > datetime(?) AND (source_agent IS NULL OR source_agent = '' OR source_agent != 'npcsh') ORDER BY timestamp ASC`, params: [sinceTs] });
+            } else if (enabled.has('npcsh_history')) {
+              slices.push({ sql: `SELECT * FROM conversation_history WHERE datetime(timestamp) > datetime(?) AND (source_agent IS NULL OR source_agent = '' OR source_agent = 'npcsh') ORDER BY timestamp ASC`, params: [sinceTs] });
+            } else {
+              slices.push({ sql: `SELECT * FROM conversation_history WHERE datetime(timestamp) > datetime(?) AND (source_agent IS NULL OR source_agent = '') ORDER BY timestamp ASC`, params: [sinceTs] });
+            }
+          }
+          if (enabled.has('agent_transcripts') && !enabled.has('conversations')) {
+            slices.push({ sql: `SELECT * FROM conversation_history WHERE datetime(timestamp) > datetime(?) AND source_agent IS NOT NULL AND source_agent != '' AND source_agent != 'npcsh' ORDER BY timestamp ASC`, params: [sinceTs] });
+          }
+          if (enabled.has('npcsh_history') && !enabled.has('conversations')) {
+            slices.push({ sql: `SELECT * FROM conversation_history WHERE datetime(timestamp) > datetime(?) AND source_agent = 'npcsh' ORDER BY timestamp ASC`, params: [sinceTs] });
+          }
+
+          const seen = new Set();
+          const messages = [];
+          for (const slice of slices) {
+            for (const row of await query(slice.sql, slice.params)) {
+              if (seen.has(row.message_id)) continue;
+              seen.add(row.message_id);
+              messages.push(row);
+            }
+          }
+          messages.sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+          result.messages = messages;
+
+          const convSeen = new Set();
+          result.conversations = messages
+            .filter((m) => {
+              if (convSeen.has(m.conversation_id)) return false;
+              convSeen.add(m.conversation_id);
+              return true;
+            })
+            .map((m) => ({
+              conversation_id: m.conversation_id,
+              directory_path: m.directory_path,
+              created_at: m.timestamp,
+              updated_at: m.timestamp,
+            }));
+        })());
+      }
+
+      if (enabled.has('bookmarks')) {
+        jobs.push((async () => {
+          result.bookmarks = await query(
+            `SELECT id, title, url, folder_path, is_global, timestamp
+             FROM bookmarks WHERE datetime(timestamp) > datetime(?) ORDER BY timestamp DESC`, [sinceTs]);
+        })());
+      }
+
+      if (enabled.has('browser_history')) {
+        jobs.push((async () => {
+          result.history = await query(
+            `SELECT id, title, url, folder_path, visit_count, last_visited
+             FROM browser_history WHERE datetime(last_visited) > datetime(?) ORDER BY last_visited DESC`, [sinceTs]);
+        })());
+      }
+
+      if (enabled.has('pdf_annotations')) {
+        jobs.push((async () => {
+          // Filtered: these tables persist indefinitely, so an unfiltered SELECT
+          // re-sends every highlight and drawing on every sync.
+          result.pdfHighlights = await query(
+            `SELECT * FROM pdf_highlights WHERE datetime(timestamp) > datetime(?) ORDER BY timestamp ASC`, [sinceTs]);
+          result.pdfDrawings = await query(
+            `SELECT * FROM pdf_drawings WHERE datetime(timestamp) > datetime(?) ORDER BY timestamp ASC`, [sinceTs]);
+        })());
+      }
+
+      if (enabled.has('knowledge_graph')) {
+        jobs.push((async () => {
+          // kg_entities carries updated_at; relations/triples carry only
+          // created_at. Filter each on the timestamp it actually has rather
+          // than shipping the whole graph every time.
+          result.kgEntities = await query(
+            `SELECT * FROM kg_entities WHERE datetime(updated_at) > datetime(?) ORDER BY updated_at ASC`, [sinceTs]);
+          result.kgRelations = await query(
+            `SELECT * FROM kg_relations WHERE datetime(created_at) > datetime(?) ORDER BY created_at ASC`, [sinceTs]);
+          result.kgTriples = await query(
+            `SELECT * FROM kg_triples WHERE datetime(created_at) > datetime(?) ORDER BY created_at ASC`, [sinceTs]);
+        })());
+      }
+
+      if (enabled.has('agent_registry')) {
+        jobs.push((async () => {
+          // Only the portable identity fields leave the machine. Discovery
+          // output (home paths, credential presence) is deliberately excluded,
+          // matching what agents:export already guarantees.
+          result.agents = (await query(`SELECT id, label, command, pinned, custom FROM agents`))
+            .map((a) => ({
+              id: a.id,
+              label: a.label,
+              command: a.command,
+              pinned: !!a.pinned,
+              custom: !!a.custom,
+            }));
+        })());
+      }
+
+      if (enabled.has('file_index')) {
+        jobs.push((async () => {
+          // Filter on indexed_at, NOT mtime.
+          //
+          // `indexed_at` is when the row entered the index (written as
+          // datetime('now')), which is what a sync cursor should track.
+          // `mtime` is when the file on disk last changed: a file from 2019
+          // indexed today has a 2019 mtime, so filtering on it would exclude
+          // that row from every incremental sync forever. The first version of
+          // this query made exactly that mistake.
+          //
+          // indexed_at is a datetime string, so it uses the same
+          // format-agnostic datetime() comparison as the other categories.
+          result.fileIndex = await query(
+            `SELECT * FROM file_index WHERE datetime(indexed_at) > datetime(?) ORDER BY indexed_at ASC`, [sinceTs]);
+        })());
+      }
+
+      /**
+       * Close the connection and only then resolve.
+       *
+       * sqlite3's close() is asynchronous. Resolving first leaves the file handle
+       * open a moment longer, which on Windows means the caller can observe the
+       * database as still locked (EBUSY on unlink). Awaiting the close callback
+       * makes the operation complete before the promise settles.
+       */
+      const closeAndResolve = (err) => {
+        if (err) console.error('[SYNC EXPORT] failed:', err.message);
+        else console.log(`[SYNC EXPORT] categories=${[...enabled].join(',')} messages=${result.messages.length} bookmarks=${result.bookmarks.length} history=${result.history.length}`);
+        db.close(() => resolve(result));
+      };
+
+      Promise.all(jobs)
+        .then(() => closeAndResolve(null))
+        .catch(closeAndResolve);
     });
   });
 
-  ipcMain.handle('sync:import-data', async (_, { conversations, messages, bookmarks, history }) => {
+  /**
+   * Describe the sync categories with live local row counts, for the account
+   * panel's per-category toggles.
+   */
+  ipcMain.handle('sync:categories', async () => {
+    try {
+      const categories = await syncCategories.describeCategories({ dbPath });
+      const selection = await readSyncCategorySelection();
+      return { categories, selection, error: null };
+    } catch (err) {
+      return { categories: [], selection: syncCategories.defaultSelection(), error: err.message };
+    }
+  });
+
+  /** Persist the user's category selection. */
+  ipcMain.handle('sync:set-categories', async (_, { selection } = {}) => {
+    try {
+      const normalized = syncCategories.normalizeSelection(selection);
+      await setSyncCategorySelection(normalized);
+      return { success: true, selection: normalized, error: null };
+    } catch (err) {
+      return { success: false, selection: syncCategories.defaultSelection(), error: err.message };
+    }
+  });
+
+  ipcMain.handle('sync:import-data', async (_, {
+    conversations, messages, bookmarks, history,
+    pdfHighlights, pdfDrawings,
+    kgEntities, kgRelations, kgTriples,
+    fileIndex,
+  }) => {
     return new Promise((resolve, reject) => {
       const db = new sqlite3.Database(dbPath);
-      let imported = { conversations: 0, messages: 0, bookmarks: 0, history: 0 };
+      let imported = {
+        conversations: 0, messages: 0, bookmarks: 0, history: 0,
+        pdfHighlights: 0, pdfDrawings: 0,
+        kgEntities: 0, kgRelations: 0, kgTriples: 0,
+        fileIndex: 0,
+      };
+
+      /**
+       * Generic insert-or-ignore for a category whose column set differs between
+       * installs. Reads the live table columns, intersects them with the keys
+       * actually present on the incoming rows, and inserts only those. Missing
+       * table or no overlap yields 0 rather than throwing.
+       */
+      const insertRows = (table, rows, keyColumns) => new Promise((res) => {
+        if (!Array.isArray(rows) || rows.length === 0) return res(0);
+        db.all(`PRAGMA table_info(${table})`, [], (err, cols) => {
+          if (err || !cols || cols.length === 0) return res(0);
+          const tableCols = cols.map((c) => c.name).filter((n) => n !== 'id');
+          const usable = tableCols.filter((c) => rows.some((r) => r[c] !== undefined));
+          if (usable.length === 0) return res(0);
+
+          const keys = (keyColumns || []).filter((k) => usable.includes(k));
+
+          /**
+           * De-duplicate against what is ALREADY in the table, not just against
+           * this batch.
+           *
+           * INSERT OR IGNORE only skips rows that violate a declared
+           * constraint. Most of these tables have a bare AUTOINCREMENT primary
+           * key and no natural-key uniqueness, so a repeated pull (or a pull
+           * after a failed cursor advance) would insert the same rows again.
+           * Querying the existing keys first makes import idempotent regardless
+           * of the table's constraints.
+           */
+          const existing = new Set();
+          const finishInsert = () => {
+            const seen = new Set();
+            const placeholders = usable.map(() => '?').join(',');
+            const stmt = db.prepare(`INSERT OR IGNORE INTO ${table} (${usable.join(',')}) VALUES (${placeholders})`);
+            let n = 0;
+            for (const row of rows) {
+              if (keys.length > 0) {
+                const key = keys.map((k) => String(row[k] === undefined ? '' : row[k])).join('|');
+                if (seen.has(key) || existing.has(key)) continue;
+                seen.add(key);
+              }
+              stmt.run(usable.map((c) => (row[c] === undefined ? null : row[c])));
+              n++;
+            }
+            stmt.finalize(() => res(n));
+          };
+
+          if (keys.length === 0) return finishInsert();
+
+          db.all(`SELECT ${keys.join(',')} FROM ${table}`, [], (readErr, existingRows) => {
+            if (!readErr && Array.isArray(existingRows)) {
+              for (const row of existingRows) {
+                existing.add(keys.map((k) => String(row[k] === undefined ? '' : row[k])).join('|'));
+              }
+            }
+            finishInsert();
+          });
+        });
+      });
 
       const getColumns = () => new Promise((res, rej) => {
         db.all("PRAGMA table_info(conversation_history)", [], (err, rows) => {
@@ -1045,6 +1347,16 @@ function register(ctx) {
           }
           stmt.finalize();
         }
+
+        // --- Additional category payloads ---
+        // Best-effort: a table missing on this install must not abort the
+        // message/bookmark/history import that already succeeded above.
+        try { imported.pdfHighlights = await insertRows('pdf_highlights', pdfHighlights, ['file_path', 'highlighted_text']); } catch (err) { console.warn('[SYNC IMPORT] pdf_highlights:', err.message); }
+        try { imported.pdfDrawings = await insertRows('pdf_drawings', pdfDrawings, ['file_path']); } catch (err) { console.warn('[SYNC IMPORT] pdf_drawings:', err.message); }
+        try { imported.kgEntities = await insertRows('kg_entities', kgEntities, ['name']); } catch (err) { console.warn('[SYNC IMPORT] kg_entities:', err.message); }
+        try { imported.kgRelations = await insertRows('kg_relations', kgRelations, []); } catch (err) { console.warn('[SYNC IMPORT] kg_relations:', err.message); }
+        try { imported.kgTriples = await insertRows('kg_triples', kgTriples, []); } catch (err) { console.warn('[SYNC IMPORT] kg_triples:', err.message); }
+        try { imported.fileIndex = await insertRows('file_index', fileIndex, ['path']); } catch (err) { console.warn('[SYNC IMPORT] file_index:', err.message); }
 
         db.close((err) => {
           if (err) reject(err);

@@ -144,6 +144,7 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                         id: `tab_${Date.now()}_0`,
                         contentType: activePaneData.contentType,
                         contentId: activePaneData.contentId,
+                        shellType: activePaneData.shellType,
                         title: getTabTitle(activePaneData),
                         browserUrl: activePaneData.browserUrl,
                         fileContent: activePaneData.fileContent,
@@ -165,6 +166,7 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                     id: `tab_${Date.now()}_${activePaneData.tabs.length}`,
                     contentType: newPaneData.contentType,
                     contentId: newPaneData.contentId,
+                    shellType: newPaneData.shellType,
                     title: getTabTitle(newPaneData),
                     browserUrl: newPaneData.browserUrl,
                     fileContent: newPaneData.fileContent,
@@ -184,6 +186,7 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
 
                 activePaneData.contentType = newPaneData.contentType;
                 activePaneData.contentId = newPaneData.contentId;
+                activePaneData.shellType = newPaneData.shellType;
                 activePaneData.browserUrl = newPaneData.browserUrl;
                 activePaneData.fileContent = newPaneData.fileContent;
                 activePaneData.fileChanged = newPaneData.fileChanged;
@@ -584,6 +587,7 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                     data.fileChanged = tab.fileChanged;
                     data.isUntitled = tab.isUntitled;
                     if (tab.contentType === 'browser') data.browserUrl = tab.browserUrl;
+                    if (tab.contentType === 'terminal') data.shellType = tab.shellType;
                     if ((tab.contentType === 'chat' || tab.contentType === 'agent')) {
                         data.chatMessages = tab.chatMessages;
                         data.executionMode = tab.executionMode;

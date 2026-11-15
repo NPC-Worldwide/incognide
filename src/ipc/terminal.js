@@ -15,6 +15,115 @@ try {
 const ptySessions = new Map();
 const ptyKillTimers = new Map();
 
+/**
+ * Resolve a usable login shell.
+ *
+ * Order matters:
+ *   1. $SHELL, if set AND the path exists
+ *   2. the shell recorded for this user in /etc/passwd (os.userInfo().shell),
+ *      which is the only reliable source when the process has no $SHELL -
+ *      notably Electron's main process, where $SHELL is frequently unset
+ *   3. well-known paths that actually exist
+ *
+ * A hardcoded fallback is deliberately avoided: spawning a path that does not
+ * exist yields a PTY that emits nothing and never exits, so the terminal looks
+ * blank and the caller sees no error at all.
+ */
+function resolveLoginShell() {
+  if (os.platform() === 'win32') {
+    // Windows has no -l/-lc login-shell convention, so "the login shell" is
+    // just the system shell. Return a REAL path where possible: node-pty will
+    // resolve a bare name through PATH, but returning a path that does not
+    // exist is the exact failure mode this function exists to prevent.
+    const candidates = [];
+    if (process.env.SystemRoot) {
+      candidates.push(path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'));
+    }
+    candidates.push('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+    if (process.env.ComSpec) candidates.push(process.env.ComSpec);
+
+    for (const candidate of candidates) {
+      try {
+        if (candidate && fs.existsSync(candidate)) return candidate;
+      } catch {}
+    }
+    // Last resort: a bare name, which spawn() resolves via PATH.
+    return 'powershell.exe';
+  }
+
+  const candidates = [];
+  if (process.env.SHELL) candidates.push(process.env.SHELL);
+
+  try {
+    const info = os.userInfo();
+    if (info && info.shell) candidates.push(info.shell);
+  } catch {}
+
+  candidates.push('/bin/bash', '/usr/bin/bash', '/bin/sh', '/usr/bin/sh');
+
+  for (const candidate of candidates) {
+    try {
+      if (candidate && fs.existsSync(candidate)) return candidate;
+    } catch {}
+  }
+  // Last resort: let spawn fail loudly against a real path.
+  return '/bin/sh';
+}
+
+/**
+ * shellTypes that mean "open a login shell, then launch this agent binary".
+ *
+ * Derived from the discovery catalog in agents.js so the launcher and the
+ * spawner can never disagree about which commands are agents. If agents.js
+ * cannot be loaded the set is empty, which degrades to "Unsupported shell
+ * type" rather than to a silently wrong shell.
+ */
+let DISCOVERABLE_AGENT_COMMANDS;
+try {
+  const { SPAWNABLE_AGENT_COMMANDS } = require('./agents');
+  DISCOVERABLE_AGENT_COMMANDS = SPAWNABLE_AGENT_COMMANDS instanceof Set
+    ? SPAWNABLE_AGENT_COMMANDS
+    : new Set();
+} catch (err) {
+  DISCOVERABLE_AGENT_COMMANDS = new Set();
+}
+
+/**
+ * Fallbacks for agents a user may have added by hand that are not in the
+ * catalog. Kept separate so the catalog stays the source of truth.
+ */
+const EXTRA_AGENT_COMMANDS = ['aider', 'cursor-agent'];
+
+/**
+ * Wire a freshly spawned PTY to the renderer and record it.
+ *
+ * Extracted so the main spawn and the agent path share exactly the same
+ * onData/onExit wiring.
+ */
+function wireSession(id, ptyProcess, webContents, shellType) {
+  const session = { ptyProcess, webContents, shellType };
+  ptySessions.set(id, session);
+
+  ptyProcess.onData(data => {
+    const s = ptySessions.get(id);
+    const wc = s?.webContents;
+    if (wc && !wc.isDestroyed()) {
+      wc.send('terminal-data', { id, data });
+    }
+  });
+
+  ptyProcess.onExit(() => {
+    const s = ptySessions.get(id);
+    const wc = s?.webContents;
+    ptySessions.delete(id);
+    if (wc && !wc.isDestroyed()) {
+      wc.send('terminal-closed', { id });
+    }
+  });
+
+  return session;
+}
+
 function register(ctx) {
   const { ipcMain, app, IS_DEV_MODE, readPythonEnvConfig } = ctx;
 
@@ -45,11 +154,6 @@ function register(ctx) {
     if (shellType === 'npcsh') {
       shell = 'npcsh';
       args = [];
-    } else if (shellType === 'guac' || shellType === 'ipython') {
-
-      shell = 'guac';
-      args = [];
-
     } else if (shellType === 'python3' || shellType === 'python') {
 
       try {
@@ -82,6 +186,32 @@ function register(ctx) {
       }
       args = ['-i'];
       actualShellType = 'python3';
+    } else if (DISCOVERABLE_AGENT_COMMANDS.has(shellType) || EXTRA_AGENT_COMMANDS.includes(shellType)) {
+      // Run the agent as the PTY process itself, via a login shell so the
+      // profile has been sourced and PATH includes user bin dirs.
+      //
+      // Deliberately NOT "open bash then type the command": that needs prompt
+      // detection and races the renderer's own writes to the session, and when
+      // it loses the race the terminal just shows a bash prompt.
+      //
+      // Also deliberately no pre-flight PATH probe. `exec <missing>` inside the
+      // login shell already prints a clear "command not found" and exits 127,
+      // in the user's own terminal, which is a better error surface than an IPC
+      // refusal. Hiding uninstalled agents is the launcher's job (discovery
+      // reports `installed`), not the spawner's.
+      if (os.platform() === 'win32') {
+        shell = resolveLoginShell();
+        // `&` is PowerShell's call operator: it runs the agent as a command
+        // rather than parsing the name as a bare string expression.
+        args = ['-NoLogo', '-Command', `& ${shellType}; exit`];
+      } else {
+        shell = resolveLoginShell();
+        // -l sources the login profile; -c runs the command; exec replaces the
+        // shell so the PTY process IS the agent.
+        args = ['-lc', `exec ${shellType}`];
+      }
+      actualShellType = shellType;
+
     } else if (shellType === 'system' || !shellType) {
 
       let useNpcsh = false;
@@ -117,7 +247,7 @@ function register(ctx) {
         args = [];
         actualShellType = 'npcsh';
       } else {
-        shell = os.platform() === 'win32' ? 'powershell.exe' : (process.env.SHELL || '/bin/zsh');
+        shell = resolveLoginShell();
         args = os.platform() === 'win32' ? [] : ['-l'];
         actualShellType = 'system';
       }
@@ -140,7 +270,25 @@ function register(ctx) {
     }
 
     try {
-      const ptyProcess = pty.spawn(shell, args, {
+      // Guard against an unmatched shellType reaching spawn(). Previously an
+      // unknown type produced pty.spawn(undefined), which node-pty accepts and
+      // which opens a plain shell - a silent wrong result rather than an error.
+      if (!shell) {
+        return { success: false, error: `Unsupported shell type: ${shellType}` };
+      }
+
+      // A nonexistent binary produces a PTY that emits nothing and never exits,
+      // which surfaces to the user as a blank terminal. Fail loudly instead.
+      const looksLikePath = shell.includes('/') || shell.includes('\\');
+      if (looksLikePath) {
+        try {
+          if (!fs.existsSync(shell)) {
+            return { success: false, error: `Shell not found: ${shell}` };
+          }
+        } catch {}
+      }
+
+      const ptyProcess = pty.spawn(shell, args || [], {
         name: 'xterm-256color',
         cols: cols || 80,
         rows: rows || 24,
@@ -148,63 +296,11 @@ function register(ctx) {
         env: cleanEnv
       });
 
-      ptySessions.set(id, { ptyProcess, webContents: senderWebContents, shellType: actualShellType });
-
-      ptyProcess.onData(data => {
-        const session = ptySessions.get(id);
-        const wc = session?.webContents;
-        if (wc && !wc.isDestroyed()) {
-          wc.send('terminal-data', { id, data });
-        }
-      });
-
-      ptyProcess.onExit(({ exitCode, signal }) => {
-        const session = ptySessions.get(id);
-        const wc = session?.webContents;
-        ptySessions.delete(id);
-        if (wc && !wc.isDestroyed()) {
-          wc.send('terminal-closed', { id });
-        }
-      });
+      wireSession(id, ptyProcess, senderWebContents, actualShellType);
 
       return { success: true, shell: actualShellType };
 
     } catch (error) {
-
-      if (shellType === 'guac' || shellType === 'ipython') {
-        try {
-          const ptyProcess = pty.spawn('ipython', [], {
-            name: 'xterm-256color',
-            cols: cols || 80,
-            rows: rows || 24,
-            cwd: workingDir,
-            env: cleanEnv
-          });
-
-          ptySessions.set(id, { ptyProcess, webContents: senderWebContents, shellType: 'ipython' });
-
-          ptyProcess.onData(data => {
-            const session = ptySessions.get(id);
-            const wc = session?.webContents;
-            if (wc && !wc.isDestroyed()) {
-              wc.send('terminal-data', { id, data });
-            }
-          });
-
-          ptyProcess.onExit(({ exitCode, signal }) => {
-            const session = ptySessions.get(id);
-            const wc = session?.webContents;
-            ptySessions.delete(id);
-            if (wc && !wc.isDestroyed()) {
-              wc.send('terminal-closed', { id });
-            }
-          });
-
-          return { success: true, shell: 'ipython' };
-        } catch (ipythonError) {
-          return { success: false, error: `Neither guac nor ipython available: ${error.message}` };
-        }
-      }
       return { success: false, error: String(error?.message || error || 'Unknown terminal error') };
     }
   });
@@ -322,4 +418,9 @@ function register(ctx) {
   });
 }
 
-module.exports = { register, ptySessions, ptyKillTimers };
+module.exports = {
+  register,
+  resolveLoginShell,
+  ptySessions,
+  ptyKillTimers,
+};

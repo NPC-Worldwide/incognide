@@ -14,7 +14,11 @@ interface AccountPaneProps {
 
 const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
     const auth = useAuth();
-    const { syncStatus, lastSyncTime, pendingChanges, triggerSync, syncFrequency, setSyncFrequency, lastSyncStats, syncProgress, forceFullResync } = useSync();
+    const {
+        syncStatus, lastSyncTime, pendingChanges, triggerSync, syncFrequency,
+        setSyncFrequency, lastSyncStats, syncProgress, forceFullResync,
+        syncCategories, categorySelection, categoriesLoading, toggleCategory,
+    } = useSync();
     const [passphrase, setPassphrase] = useState('');
     const [confirmPassphrase, setConfirmPassphrase] = useState('');
     const [showPassphrase, setShowPassphrase] = useState(false);
@@ -25,6 +29,10 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
     const [cloudKey, setCloudKey] = useState(0);
     const [cloudSrc, setCloudSrc] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'account' | 'cloud'>('account');
+    // Expanded by default. The picker was collapsed behind a "Choose" link and
+    // was reported as "I don't see anywhere to control these things" - a
+    // control nobody finds is the same as a control that does not exist.
+    const [showSyncCategories, setShowSyncCategories] = useState(true);
 
     useEffect(() => {
         let alive = true;
@@ -359,7 +367,12 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                 </div>
                             </div>
 
-                            {auth.isAuthenticated && (
+                            {/* Sync card is NOT gated on sign-in. The category
+                                picker is local configuration and must be visible
+                                (and editable) before the user authenticates, so
+                                they can see what WOULD sync. Only the actions
+                                that actually push data require auth. */}
+                            {(
                                 <div className="theme-bg-secondary rounded-xl border theme-border overflow-hidden">
                                     <div className="px-5 py-4 border-b theme-border">
                                         <h2 className="text-sm font-medium theme-text-muted uppercase tracking-wide">Sync</h2>
@@ -376,7 +389,7 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                                      auth.isEncryptionReady ? 'Sync enabled' : 'Unlock encryption to sync'}
                                                 </p>
                                                 <p className="text-xs theme-text-muted">
-                                                    {lastSyncTime ? `Last synced ${lastSyncTime.toLocaleString()}` : 'Conversations, bookmarks, history, and memories'}
+                                                    {lastSyncTime ? `Last synced ${lastSyncTime.toLocaleString()}` : 'Choose what to sync below'}
                                                 </p>
                                             </div>
                                         </div>
@@ -401,6 +414,82 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                         {auth.device && (
                                             <div className="text-xs theme-text-muted border-t theme-border pt-3">
                                                 Device: {auth.device.deviceName} ({auth.device.deviceType})
+                                            </div>
+                                        )}
+
+                                        {/* Per-category sync selection. Rendered from the
+                                            main process's category registry so the list can
+                                            never drift from what the exporter actually sends. */}
+                                        {syncCategories.length > 0 && (
+                                            <div className="border-t theme-border pt-3">
+                                                <button
+                                                    onClick={() => setShowSyncCategories(v => !v)}
+                                                    className="flex items-center justify-between w-full text-xs theme-text-muted hover:theme-text-primary"
+                                                >
+                                                    <span className="flex items-center gap-1.5">
+                                                        <Shield size={12} />
+                                                        What syncs
+                                                        <span className="theme-text-muted">
+                                                            ({syncCategories.filter(c => categorySelection[c.id]).length}/{syncCategories.length})
+                                                        </span>
+                                                    </span>
+                                                    <span>{showSyncCategories ? 'Hide' : 'Choose'}</span>
+                                                </button>
+
+                                                {showSyncCategories && (
+                                                    <div className="mt-2 space-y-2">
+                                                        {categoriesLoading && (
+                                                            <p className="text-[11px] theme-text-muted">Loading…</p>
+                                                        )}
+                                                        {Array.from(new Set(syncCategories.map(c => c.group))).map(group => (
+                                                            <div key={group}>
+                                                                <div className="text-[10px] uppercase tracking-wide theme-text-muted mt-2 mb-1">{group}</div>
+                                                                {syncCategories.filter(c => c.group === group).map(category => {
+                                                                    const enabled = !!categorySelection[category.id];
+                                                                    const disabled = syncStatus === 'syncing';
+                                                                    return (
+                                                                        <label
+                                                                            key={category.id}
+                                                                            className={`flex items-start gap-2 py-1 px-1 rounded ${disabled ? 'opacity-60' : 'cursor-pointer hover:bg-white/5'}`}
+                                                                        >
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={enabled}
+                                                                                disabled={disabled}
+                                                                                onChange={(e) => toggleCategory(category.id, e.target.checked)}
+                                                                                className="mt-0.5 accent-blue-500"
+                                                                            />
+                                                                            <span className="flex-1 min-w-0">
+                                                                                <span className="flex items-center gap-1.5 text-xs">
+                                                                                    {category.label}
+                                                                                    {category.count > 0 && (
+                                                                                        <span className="text-[10px] theme-text-muted">
+                                                                                            {category.count.toLocaleString()}
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {category.sensitive && (
+                                                                                        <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-400">
+                                                                                            sensitive
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {!category.available && (
+                                                                                        <span className="text-[9px] theme-text-muted">(none local)</span>
+                                                                                    )}
+                                                                                </span>
+                                                                                <span className="block text-[10px] theme-text-muted leading-tight">
+                                                                                    {category.description}
+                                                                                </span>
+                                                                            </span>
+                                                                        </label>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        ))}
+                                                        <p className="text-[10px] theme-text-muted pt-1 border-t theme-border">
+                                                            Unchecked categories are never read or uploaded.
+                                                        </p>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                         {auth.isEncryptionReady && (

@@ -6,7 +6,7 @@ export const PANE_TYPE_INFO: Record<string, { title: string; description: string
   'chat':             { title: 'Chat',             description: 'AI chat conversation', actions: ['send_message', 'switch_npc', 'list_actions'] },
   'agent':            { title: 'Agent',            description: 'AI agent with tools', actions: ['send_message', 'switch_npc', 'list_actions'] },
   'editor':           { title: 'Code Editor',      description: 'Edit code and text files', needsPath: true, actions: ['read_pane', 'write_pane', 'write_file', 'get_selection'] },
-  'terminal':         { title: 'Terminal',          description: 'Shell terminal (system, npcsh, guac)', actions: ['run_terminal'] },
+  'terminal':         { title: 'Terminal',          description: 'Shell terminal (system, npcsh)', actions: ['run_terminal'] },
 
   'pdf':              { title: 'PDF Viewer',        description: 'View PDF documents', needsPath: true },
   'csv':              { title: 'Spreadsheet',       description: 'View/edit CSV and Excel files', needsPath: true, actions: ['spreadsheet_read', 'spreadsheet_update_cell', 'spreadsheet_add_row', 'spreadsheet_add_column', 'read_pane'] },

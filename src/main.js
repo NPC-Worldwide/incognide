@@ -2085,6 +2085,25 @@ window.__addLog = function(msg) {
   const dataPath = ensureUserDataDirectory();
   await ensureTablesExist();
 
+  // Ingest coding-agent transcripts (codex/claude/opencode) into
+  // conversation_history so they are searchable and syncable alongside native
+  // chats. Runs after the schema exists. Deliberately fire-and-forget: indexing
+  // must never delay window creation, and ingestion is idempotent so a failed
+  // pass simply retries next launch.
+  setTimeout(() => {
+    (async () => {
+      try {
+        const { ingestAgentHistory, ensureSourceColumns } = require('./ipc/agentHistory');
+        await ensureSourceColumns(dbQuery);
+        const stats = await ingestAgentHistory({ dbQuery, dbPath });
+        log(`[AgentHistory] indexed ${stats.inserted} new message(s) from ${stats.scanned} source(s), ${stats.skipped} unchanged${stats.errors.length ? `, ${stats.errors.length} error(s)` : ''}`);
+        if (stats.errors.length) log(`[AgentHistory] errors: ${stats.errors.slice(0, 5).join(' | ')}`);
+      } catch (err) {
+        log(`[AgentHistory] ingestion failed: ${err.message}`);
+      }
+    })();
+  }, 4000);
+
   if (app.isPackaged) {
     try {
       await deployIncognideTeamOnStartup();

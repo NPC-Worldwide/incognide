@@ -405,6 +405,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                     contentType: paneData.contentType,
                                     contentId: paneData.contentId,
                                     browserUrl: paneData.browserUrl,
+                                    shellType: paneData.shellType,
                                     fileContent: paneData.fileContent,
                                     fileChanged: paneData.fileChanged,
                                     _scrollTopPos: paneData._scrollTopPos,
@@ -936,6 +937,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 const selectedVirtualData = contentDataRef.current[selectedVirtualId];
                 paneData.contentType = selectedTab.contentType;
                 paneData.contentId = selectedTab.contentId;
+                if (selectedTab.contentType === 'terminal') {
+                    paneData.shellType = selectedTab.shellType || selectedVirtualData?.shellType || 'system';
+                }
 
                 paneData.fileContent = selectedVirtualData?.fileContent ?? selectedTab.fileContent;
                 paneData.fileChanged = selectedVirtualData?.fileChanged ?? selectedTab.fileChanged ?? false;
@@ -1021,6 +1025,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     if (newActiveTab) {
                         paneData.contentType = newActiveTab.contentType;
                         paneData.contentId = newActiveTab.contentId;
+                        if (newActiveTab.contentType === 'terminal') {
+                            paneData.shellType = newActiveTab.shellType || newActiveVd?.shellType || 'system';
+                        }
 
                         paneData.fileContent = newActiveVd?.fileContent ?? newActiveTab.fileContent;
                         paneData.fileChanged = newActiveVd?.fileChanged ?? newActiveTab.fileChanged ?? false;
@@ -1107,6 +1114,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             id: `tab_${Date.now()}_0`,
                             contentType: paneData.contentType,
                             contentId: paneData.contentId,
+                            shellType: paneData.shellType,
                             fileContent: paneData.fileContent,
                             fileChanged: paneData.fileChanged,
                             isUntitled: paneData.isUntitled,
@@ -1140,6 +1148,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 } else if (contentType === 'terminal') {
                     newContentId = `term_${Date.now()}`;
                     title = 'Terminal';
+                    extraChatProps = { shellType: paneData.shellType || 'system' };
                 } else if (contentType === 'browser') {
                     newContentId = 'https://google.com';
                     title = 'Browser';
@@ -1172,6 +1181,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
                 paneData.contentType = contentType;
                 paneData.contentId = newContentId;
+                if (contentType === 'terminal') {
+                    paneData.shellType = extraChatProps.shellType;
+                }
 
                 if (extraChatProps.chatMessages) {
                     paneData.chatMessages = extraChatProps.chatMessages;
@@ -1204,7 +1216,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             headerTitle = paneData.browserTitle || paneData.browserUrl || 'Web Browser';
         } else if (contentType === 'terminal') {
             headerIcon = <Terminal size={14} className="text-green-400" />;
-            headerTitle = 'Terminal';
+            headerTitle = paneData?.shellType && paneData.shellType !== 'system'
+                ? `Terminal (${paneData.shellType})`
+                : 'Terminal';
         } else if (contentType === 'image') {
             headerIcon = <ImageIcon size={14} className="text-purple-400" />;
             headerTitle = getFileName(contentId) || 'Image Viewer';
@@ -1492,10 +1506,11 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 const isActiveTab = index === activeTabIndex;
                 const existingVd = contentDataRef.current[virtualId];
 
-                if (!existingVd || existingVd.contentId !== tab.contentId || existingVd.isUntitled !== tab.isUntitled) {
+                if (!existingVd || existingVd.contentId !== tab.contentId || existingVd.isUntitled !== tab.isUntitled || existingVd.shellType !== tab.shellType) {
                     contentDataRef.current[virtualId] = {
                         contentType: tab.contentType,
                         contentId: tab.contentId,
+                        shellType: tab.shellType,
                         browserUrl: tab.browserUrl,
                         browserTitle: tab.browserTitle,
                         fileContent: tab.fileContent,

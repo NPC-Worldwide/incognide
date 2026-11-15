@@ -8,7 +8,7 @@ import {
     Terminal, Image, Music, Trash, Users, Plus, ArrowUp, Camera, MessageSquare,
     ListFilter, ArrowDown,X, Wrench, FileText, Code2, FileJson, Paperclip,
     Send, Minimize2,  Maximize2, MessageCircle, BrainCircuit, Star, Origami, ChevronDown, ChevronUp,
-    Clock, FolderTree, Search, Brain, GitBranch, Activity, Tag, Sparkles, Code, BookOpen, User, FolderOpen,
+    Clock, FolderTree, Search, Brain, GitBranch, Activity, Tag, Sparkles, BookOpen, User, FolderOpen,
     RefreshCw, RotateCcw, Check, KeyRound, Bot, Zap, HelpCircle, AlertCircle, ExternalLink
 } from 'lucide-react';
 
@@ -3960,7 +3960,10 @@ useEffect(() => {
         }
     }, [editedFileName, currentPath]);
 
-    const createNewTerminal = useCallback(async (shellType: 'system' | 'npcsh' | 'guac' | 'python3' = 'system') => {
+    // shellType is not limited to the built-in shells: the terminal-create menu
+    // also passes discovered agent commands ('codex', 'claude', ...). The main
+    // process turns those into "login shell + type the command".
+    const createNewTerminal = useCallback(async (shellType: string = 'system') => {
         const newTerminalId = `term_${generateId()}`;
         const connectionId = getActiveConnectionId();
         const paneBase = connectionId
@@ -7205,7 +7208,7 @@ const renderPaneContextMenu = () => {
         setPaneContextMenu(null);
     };
 
-    const handleNewTerminal = (shellType: 'system' | 'npcsh' | 'guac' = 'system') => {
+    const handleNewTerminal = (shellType: 'system' | 'npcsh' = 'system') => {
         createNewTerminal(shellType);
         setPaneContextMenu(null);
     };
@@ -7277,9 +7280,6 @@ const renderPaneContextMenu = () => {
                         </button>
                         <button onClick={() => handleNewTerminal('npcsh')} className="flex items-center gap-2 px-4 py-2 w-full text-left theme-hover">
                             <Sparkles size={14} className="text-purple-400" /> npcsh
-                        </button>
-                        <button onClick={() => handleNewTerminal('guac')} className="flex items-center gap-2 px-4 py-2 w-full text-left theme-hover">
-                            <Code size={14} className="text-yellow-400" /> guac
                         </button>
                     </div>
                 </div>

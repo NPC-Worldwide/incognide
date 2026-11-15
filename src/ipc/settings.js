@@ -6,14 +6,27 @@ const { dialog } = require('electron');
 const { spawn, execSync } = require('child_process');
 const fetch = require('node-fetch');
 const yaml = require('js-yaml');
+const { detectTeamSources } = require('./teamSources');
 
 let INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
 
+/**
+ * Expand a leading `~` to the user's home directory.
+ *
+ * Uses path.join rather than string concatenation so the result has the
+ * platform separator. `text.replace(/^~/, os.homedir())` yields
+ * `C:\Users\me/npc_team` on Windows: the separator after home stays a forward
+ * slash, so the value never compares equal to a path built with path.join and
+ * downstream fs calls see a mixed-separator path.
+ *
+ * Accepts both `~/sub/path` and the Windows-style `~\sub\path`.
+ */
 const expandTilde = (filepath) => {
   if (typeof filepath !== 'string') return filepath;
-  if (filepath.startsWith('~/')) return path.join(os.homedir(), filepath.slice(2));
   if (filepath === '~') return os.homedir();
-  return filepath;
+  if (!filepath.startsWith('~')) return filepath;
+  const rest = filepath.slice(1).replace(/^[\\/]+/, '');
+  return rest ? path.join(os.homedir(), rest) : os.homedir();
 };
 
 const pythonEnvConfigPath = path.join(INCOGNIDE_HOME, 'python_envs.json');
@@ -47,7 +60,7 @@ const defaultTilesConfig = {
     { id: 'chat', label: 'Chat', icon: 'plus', enabled: true, order: 1 },
     { id: 'folder', label: 'Folder', icon: 'folder', enabled: true, order: 2 },
     { id: 'browser', label: 'Browser', icon: 'globe', enabled: true, order: 3 },
-    { id: 'terminal', label: 'Terminal', icon: 'terminal', enabled: true, order: 4, subTypes: ['system', 'npcsh', 'guac'] },
+    { id: 'terminal', label: 'Terminal', icon: 'terminal', enabled: true, order: 4, subTypes: ['system', 'npcsh'] },
     { id: 'code', label: 'Code', icon: 'code', enabled: true, order: 5 },
     { id: 'document', label: 'Doc', icon: 'file-text', enabled: true, order: 6, subTypes: ['docx', 'xlsx', 'pptx', 'mapx'] },
     { id: 'workspace', label: 'Incognide', icon: 'incognide', enabled: true, order: 7 }
@@ -3969,7 +3982,7 @@ function register(ctx) {
         ];
 
         const dirsToScan = directory
-            ? [directory.replace(/^~/, homeDir)]
+            ? [expandTilde(directory)]
             : defaultDirs;
 
         const models = [];
@@ -4176,19 +4189,20 @@ function register(ctx) {
 
   ipcMain.handle('get-activity-predictions', async (event) => {
     try {
-        const [browserRows, commandRows, jinxRows, memoryRows, activityRows] = await Promise.all([
+        // Only live tables feed "recent activity".
+        //
+        // command_history, jinx_executions and memory_lifecycle are legacy npcsh
+        // tables: nothing in this app writes them any more (their newest rows are
+        // 2025-09-17, 2026-06-11 and 2026-02-28 respectively). Reading them here
+        // would surface year-old rows as "recent", so they are excluded. The
+        // activity_log and browser_history tables are both actively written.
+        const [browserRows, activityRows] = await Promise.all([
             dbQuery(`SELECT title, url, MAX(last_visited) as timestamp, 'website_visit' as type FROM browser_history GROUP BY url ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
-            dbQuery(`SELECT command, timestamp, 'terminal_command' as type FROM command_history ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
-            dbQuery(`SELECT jinx_name, timestamp, 'jinx_execution' as type FROM jinx_executions ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
-            dbQuery(`SELECT initial_memory, npc, timestamp, 'memory_created' as type FROM memory_lifecycle ORDER BY timestamp DESC LIMIT 100`).catch(() => []),
             dbQuery(`SELECT activity_type, activity_data, timestamp, npc FROM activity_log ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
         ]);
 
         const recentActivities = [
             ...browserRows.map(r => ({ type: r.type, data: { url: r.url, title: r.title }, timestamp: r.timestamp })),
-            ...commandRows.map(r => ({ type: r.type, data: { command: r.command }, timestamp: r.timestamp })),
-            ...jinxRows.map(r => ({ type: r.type, data: { command: r.jinx_name }, timestamp: r.timestamp })),
-            ...memoryRows.map(r => ({ type: r.type, data: { memory: r.initial_memory, npc: r.npc }, timestamp: r.timestamp })),
             ...activityRows.map(r => { let d = {}; try { d = JSON.parse(r.activity_data || '{}'); } catch {} return { type: r.activity_type, data: d, timestamp: r.timestamp }; }),
         ].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()).slice(0, 100);
 
@@ -4229,7 +4243,6 @@ function register(ctx) {
                 peakHours
             },
             recentActivities,
-            memoryCount: memoryRows.length
         };
     } catch (err) {
         console.error('Error getting activity data from local DB:', err);
@@ -4947,7 +4960,7 @@ function register(ctx) {
       }
       for (const [key, teamPath] of Object.entries(teams)) {
         if (typeof teamPath === 'string') {
-          teams[key] = teamPath.replace(/^~(?=\/|$)/, os.homedir());
+          teams[key] = expandTilde(teamPath);
         }
       }
       return { teams };
@@ -4960,6 +4973,21 @@ function register(ctx) {
     try {
       const filePath = path.join(INCOGNIDE_HOME, 'teams.yaml');
       await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+
+      // A markdown-only project has no npc_team dir of its own, but npcpy's
+      // loader requires the registered path to exist (it reads agents.md from
+      // dirname(team_path)), so registering one without creating the dir fails
+      // with "Team directory not found". Create it here.
+      for (const teamPath of Object.values(teams || {})) {
+        if (typeof teamPath !== 'string' || !teamPath.trim()) continue;
+        const abs = expandTilde(teamPath);
+        try {
+          await fsPromises.mkdir(abs, { recursive: true });
+        } catch (mkErr) {
+          if (mkErr.code !== 'EEXIST') throw mkErr;
+        }
+      }
+
       const content = yaml.dump({ teams: teams || {} }, { lineWidth: -1 });
       await fsPromises.writeFile(filePath, content, 'utf8');
       return { success: true };
@@ -4978,110 +5006,120 @@ function register(ctx) {
         registered = parsed?.teams || {};
       } catch {}
 
-      const registeredPaths = new Set(Object.values(registered).map((t) => {
-        return String(t || '').replace(/^~(?=\/|$)/, os.homedir());
-      }));
+      const expand = expandTilde;
+      const registeredPaths = new Set(Object.values(registered).map(expand));
 
-      const discovered = [];
-      const seen = new Set();
-
-      const checkDir = async (dir, name) => {
-        if (seen.has(dir)) return;
-        if (registeredPaths.has(dir)) return;
+      const isAlreadyRegistered = (p) => {
+        if (registeredPaths.has(p)) return true;
         for (const rp of registeredPaths) {
-          if (dir.startsWith(rp + path.sep) || rp.startsWith(dir + path.sep)) return;
+          if (p.startsWith(rp + path.sep) || rp.startsWith(p + path.sep)) return true;
         }
+        return false;
+      };
 
-        const dirsToCheck = [dir];
-        const npcTeamDir = path.join(dir, 'npc_team');
-        try { await fsPromises.access(npcTeamDir); if (!seen.has(npcTeamDir) && !registeredPaths.has(npcTeamDir)) dirsToCheck.push(npcTeamDir); } catch {}
-
-        for (const d of dirsToCheck) {
-          if (registeredPaths.has(d) || seen.has(d)) continue;
-          seen.add(d);
-
-          let hasNpcs = false, hasCtx = false, hasJinxes = false, hasAgents = false, npcCount = 0, ctxName = '';
-          try {
-            const entries = await fsPromises.readdir(d);
-            const npcFiles = entries.filter(f => f.endsWith('.npc'));
-            const ctxFiles = entries.filter(f => f.endsWith('.ctx'));
-            const hasMcpJson = entries.some(f => f === '.mcp.json' || f === '.mcp_servers.json' || f === 'mcp_servers.json');
-
-            if (npcFiles.length > 0) { hasNpcs = true; npcCount = npcFiles.length; }
-            if (ctxFiles.length > 0) { hasCtx = true; ctxName = ctxFiles[0].replace('.ctx', ''); }
-            try { await fsPromises.access(path.join(d, 'jinxes')); hasJinxes = true; } catch {}
-            try { await fsPromises.access(path.join(d, 'agents')); hasAgents = true; } catch {}
-            try { const agMs = entries.filter(f => f.toLowerCase() === 'agents.md'); if (agMs.length > 0) hasAgents = true; } catch {}
-
-            if (hasNpcs || hasCtx || hasJinxes || hasAgents || hasMcpJson) {
-              discovered.push({ name: ctxName || name, path: d, hasNpcs, hasJinxes, hasCtx, hasAgents, npcCount });
-            }
-          } catch {}
+      // Detection lives in teamSources.js so the UI and the scan agree on what
+      // counts as a team, and agree with npcpy's own loader about *which path*
+      // to register (agents.md / agents/ are read from dirname(team_path)).
+      const candidates = [];
+      const consider = (dir) => {
+        for (const c of detectTeamSources(dir)) {
+          if (isAlreadyRegistered(c.path)) continue;
+          candidates.push(c);
         }
       };
 
       const scanDirs = [];
-      if (typeof scanInput === 'string' && scanInput) {
-        scanDirs.push(scanInput);
-      } else if (Array.isArray(scanInput)) {
-        for (const p of scanInput) {
-          if (typeof p === 'string' && p) scanDirs.push(p);
-        }
+      if (typeof scanInput === 'string' && scanInput) scanDirs.push(scanInput);
+      else if (Array.isArray(scanInput)) {
+        for (const p of scanInput) if (typeof p === 'string' && p) scanDirs.push(p);
       }
 
-      for (const dir of scanDirs) {
-        const abs = dir.replace(/^~(?=\/|$)/, os.homedir());
-        await checkDir(abs, path.basename(abs));
-        try {
-          const parent = path.dirname(abs);
-          if (parent && parent !== abs) await checkDir(parent, path.basename(parent));
-        } catch {}
-      }
-
-      const wellKnown = [
-        { name: 'incognide', dir: path.join(INCOGNIDE_HOME, 'npc_team') },
-        { name: 'home', dir: os.homedir() },
+      const knownRoots = [
+        path.join(INCOGNIDE_HOME, 'npc_team'),
+        path.join(os.homedir(), '.npcsh', 'npc_team'),
       ];
-      for (const wk of wellKnown) {
-        await checkDir(wk.dir, wk.name);
-      }
+      for (const k of knownRoots) consider(k);
 
       try {
-        const incognideEntries = await fsPromises.readdir(INCOGNIDE_HOME);
-        for (const entry of incognideEntries) {
+        for (const entry of await fsPromises.readdir(INCOGNIDE_HOME)) {
           if (entry.startsWith('.') || entry === 'npc_team') continue;
-          const subTeamDir = path.join(INCOGNIDE_HOME, entry, 'npc_team');
-          await checkDir(subTeamDir, entry);
+          consider(path.join(INCOGNIDE_HOME, entry, 'npc_team'));
+          consider(path.join(INCOGNIDE_HOME, entry));
         }
       } catch {}
 
+      // Project roots: detectTeamSources already probes a child npc_team, so a
+      // single call per root covers .npc/.ctx teams and markdown declarations.
       for (const dir of scanDirs) {
-        const abs = dir.replace(/^~(?=\/|$)/, os.homedir());
+        const abs = expand(dir);
+        consider(abs);
         try {
-          const entries = await fsPromises.readdir(abs);
-          for (const entry of entries) {
+          for (const entry of await fsPromises.readdir(abs)) {
             if (entry.startsWith('.') || entry === 'node_modules') continue;
-            const subTeamDir = path.join(abs, entry, 'npc_team');
-            await checkDir(subTeamDir, entry);
-            const directDir = path.join(abs, entry);
-            await checkDir(directDir, entry);
+            consider(path.join(abs, entry));
           }
         } catch {}
       }
 
       if (scanDirs.length === 0) {
         try {
-          const home = os.homedir();
-          const entries = await fsPromises.readdir(home);
-          for (const entry of entries) {
+          for (const entry of await fsPromises.readdir(os.homedir())) {
             if (entry.startsWith('.') || entry === 'node_modules') continue;
-            const subTeamDir = path.join(home, entry, 'npc_team');
-            await checkDir(subTeamDir, entry);
-            const directDir = path.join(home, entry);
-            await checkDir(directDir, entry);
+            consider(path.join(os.homedir(), entry, 'npc_team'));
           }
         } catch {}
       }
+
+      // De-dupe. Two candidates can describe the same agents from different
+      // angles: `X/npc_team` (markdown_team, reads X/agents.md) and
+      // `X/agents` (markdown_team_child, whose parent declares them). Keep the
+      // one a user would more naturally register.
+      const KIND_RANK = { npc_team: 0, markdown_team: 1, markdown_team_child: 2 };
+      const bySignature = new Map();
+      for (const c of candidates) {
+        // same agent set from the same project == same team
+        const projectRoot = c.kind === 'markdown_team'
+          ? path.dirname(c.path)                    // X/npc_team -> X
+          : path.dirname(c.path);                   // X/agents  -> X
+        const sig = `${projectRoot}::${(c.agents || []).slice().sort().join(',')}`;
+        const prev = bySignature.get(sig);
+        const better = !prev
+          || (KIND_RANK[c.kind] ?? 9) < (KIND_RANK[prev.kind] ?? 9);
+        if (better) bySignature.set(sig, c);
+      }
+      // Same path can be described twice (a dir with a .ctx *and* an agents/
+      // sibling). Keep the record that knows about more agents, so the UI can
+      // show what will actually load.
+      const byPath = new Map();
+      for (const c of bySignature.values()) {
+        const prev = byPath.get(c.path);
+        if (!prev) { byPath.set(c.path, c); continue; }
+        const richer = (c.agents || []).length > (prev.agents || []).length ? c : prev;
+        const poorer = richer === c ? prev : c;
+        byPath.set(c.path, {
+          ...poorer,
+          ...richer,
+          agents: richer.agents,
+          npcCount: richer.npcCount || poorer.npcCount,
+          kind: richer.kind,
+          reason: prev.reason && c.reason && prev.reason !== c.reason
+            ? `${poorer.reason}; ${richer.reason}` : richer.reason,
+        });
+      }
+
+      const discovered = Array.from(byPath.values()).map((c) => ({
+        name: c.name,
+        path: c.path,
+        kind: c.kind,
+        npcCount: c.npcCount,
+        agents: c.agents || [],
+        agentsMd: c.agentsMd || null,
+        agentsDir: c.agentsDir || null,
+        reason: c.reason,
+        // The module decides this: a markdown team needs its child npc_team
+        // directory to exist before npcpy can load it.
+        needsCreate: !!c.needsCreate,
+      }));
 
       return { discovered };
     } catch (err) {

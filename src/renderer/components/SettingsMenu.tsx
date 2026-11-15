@@ -510,7 +510,6 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                             options={[
                                 { value: 'system', label: 'Bash' },
                                 { value: 'npcsh', label: 'npcsh' },
-                                { value: 'guac', label: 'guac' },
                                 { value: 'agent', label: 'Agent' },
                                 { value: 'chat', label: 'Chat' },
                                 { value: 'browser', label: 'Browser' },

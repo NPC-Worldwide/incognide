@@ -14,6 +14,8 @@ const ssh = require('./ssh');
 const team = require('./team');
 const orcarouter = require('./orcarouter');
 const versions = require('./versions');
+const agents = require('./agents');
+const agentHistory = require('./agentHistory');
 
 function getIndexLocationFunctions() {
   return {
@@ -56,6 +58,8 @@ function registerAll(ctx) {
   ssh.register(fullCtx);
   orcarouter.register(fullCtx);
   versions.register(fullCtx);
+  agents.register(fullCtx);
+  agentHistory.register(fullCtx);
 }
 
 module.exports = {
