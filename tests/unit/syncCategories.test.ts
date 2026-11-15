@@ -79,11 +79,17 @@ const SCHEMA = [
     cost TEXT, execution_mode TEXT, device_id TEXT, device_name TEXT)`,
   `CREATE TABLE bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, url TEXT, folder_path TEXT, is_global INTEGER, timestamp DATETIME)`,
   `CREATE TABLE browser_history (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, url TEXT, folder_path TEXT, visit_count INTEGER, last_visited DATETIME)`,
-  `CREATE TABLE pdf_highlights (id INTEGER PRIMARY KEY AUTOINCREMENT, file_path TEXT, highlighted_text TEXT, annotation TEXT, color TEXT, position TEXT)`,
-  `CREATE TABLE pdf_drawings (id INTEGER PRIMARY KEY AUTOINCREMENT, file_path TEXT, drawing_data TEXT)`,
-  `CREATE TABLE kg_entities (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, entity_type TEXT)`,
-  `CREATE TABLE kg_relations (id INTEGER PRIMARY KEY AUTOINCREMENT, source_id INTEGER, target_id INTEGER, relation_type TEXT)`,
-  `CREATE TABLE kg_triples (id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT, predicate TEXT, object TEXT)`,
+  // These mirror the REAL column names in src/main.js. An earlier version of
+  // this fixture invented `position`/`drawing_data`/`source_id`/`subject`, which
+  // is why the suite could not catch ENCRYPTED_FIELDS naming columns that do not
+  // exist: the harness agreed with the bug. Keep these in sync with the CREATE
+  // TABLE statements in src/main.js. A name that is not on its table is dropped
+  // silently at encrypt time, so these must stay aligned.
+  `CREATE TABLE pdf_highlights (id INTEGER PRIMARY KEY AUTOINCREMENT, file_path TEXT NOT NULL, highlighted_text TEXT NOT NULL, position_json TEXT NOT NULL, annotation TEXT DEFAULT '', color TEXT DEFAULT 'yellow', timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE pdf_drawings (id INTEGER PRIMARY KEY AUTOINCREMENT, file_path TEXT NOT NULL, page_index INTEGER NOT NULL, drawing_type TEXT NOT NULL DEFAULT 'freehand', svg_path TEXT NOT NULL, stroke_color TEXT DEFAULT '#000000', stroke_width REAL DEFAULT 2, position_x REAL DEFAULT 0, position_y REAL DEFAULT 0, width REAL DEFAULT 100, height REAL DEFAULT 100, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE kg_entities (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, entity_type TEXT DEFAULT 'concept', source TEXT, embedding BLOB, metadata TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE kg_relations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, relation_type TEXT DEFAULT 'semantic', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE kg_triples (id INTEGER PRIMARY KEY AUTOINCREMENT, head_entity_id INTEGER NOT NULL, relation_id INTEGER NOT NULL, tail_entity_id INTEGER NOT NULL, weight REAL DEFAULT 1.0, source TEXT, metadata TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE file_index (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, filename TEXT, mtime INTEGER, indexed_at DATETIME)`,
 ];
 
@@ -334,6 +340,82 @@ describe('import', () => {
     await handlers['sync:import-data']({}, { bookmarks: exported.bookmarks });
 
     const rows: any[] = await dbQuery(`SELECT COUNT(*) n FROM bookmarks`);
+    expect(rows[0].n).toBe(1);
+  });
+
+  /**
+   * A category is re-exported IN FULL when its payload version is bumped (see
+   * staleCategories), so "import the same rows twice" is expected, not an edge
+   * case. kg_relations and kg_triples used to pass no key columns to insertRows,
+   * which silently meant "do not de-duplicate at all" -- three imports produced
+   * three copies of every edge, corrupting the graph the desktop then re-imports.
+   */
+  it('does not duplicate knowledge-graph rows on a repeated full import', async () => {
+    const payload = {
+      kgEntities: [{ id: 1, name: 'alice', entity_type: 'person' }],
+      kgRelations: [{ id: 1, name: 'knows', relation_type: 'social' }],
+      kgTriples: [{ id: 1, head_entity_id: 1, relation_id: 1, tail_entity_id: 2, weight: 1 }],
+    };
+
+    for (let i = 0; i < 3; i++) await handlers['sync:import-data']({}, payload);
+
+    const count = async (table: string) => {
+      const rows: any[] = await dbQuery(`SELECT COUNT(*) n FROM ${table}`);
+      return rows[0].n;
+    };
+    expect(await count('kg_entities')).toBe(1);
+    expect(await count('kg_relations')).toBe(1);
+    expect(await count('kg_triples')).toBe(1);
+  });
+
+  it('still imports rows that genuinely differ', async () => {
+    // The full-tuple fallback must not collapse distinct rows into one.
+    await handlers['sync:import-data']({}, {
+      kgRelations: [
+        { name: 'knows', relation_type: 'social' },
+        { name: 'owns', relation_type: 'ownership' },
+      ],
+    });
+    const rows: any[] = await dbQuery(`SELECT COUNT(*) n FROM kg_relations`);
+    expect(rows[0].n).toBe(2);
+  });
+
+  /**
+   * Keying an annotation on `file_path` alone silently discarded real data: a
+   * second highlight on the same page, or a second ink stroke in the same PDF,
+   * collided with the first and was never inserted. The key has to describe the
+   * annotation, not the file it happens to live in.
+   */
+  it('imports two ink strokes on the same PDF as two rows', async () => {
+    await handlers['sync:import-data']({}, {
+      pdfDrawings: [
+        { file_path: '/docs/a.pdf', page_index: 1, svg_path: 'M0,0 L10,10' },
+        { file_path: '/docs/a.pdf', page_index: 2, svg_path: 'M5,5 L20,20' },
+      ],
+    });
+    const rows: any[] = await dbQuery(`SELECT COUNT(*) n FROM pdf_drawings`);
+    expect(rows[0].n).toBe(2);
+  });
+
+  it('imports the same passage highlighted twice at different positions', async () => {
+    // The SAME text at two different places is two genuine highlights. Keying on
+    // file_path + text alone merges them, losing one -- which is why the key
+    // includes position_json.
+    await handlers['sync:import-data']({}, {
+      pdfHighlights: [
+        { file_path: '/docs/a.pdf', highlighted_text: 'repeated phrase', position_json: '{"r":[1,2,3,4]}' },
+        { file_path: '/docs/a.pdf', highlighted_text: 'repeated phrase', position_json: '{"r":[5,6,7,8]}' },
+      ],
+    });
+    const rows: any[] = await dbQuery(`SELECT COUNT(*) n FROM pdf_highlights`);
+    expect(rows[0].n).toBe(2);
+  });
+
+  it('still de-duplicates an identical annotation on re-import', async () => {
+    const payload = { pdfDrawings: [{ file_path: '/a.pdf', page_index: 1, svg_path: 'M0,0' }] };
+    await handlers['sync:import-data']({}, payload);
+    await handlers['sync:import-data']({}, payload);
+    const rows: any[] = await dbQuery(`SELECT COUNT(*) n FROM pdf_drawings`);
     expect(rows[0].n).toBe(1);
   });
 

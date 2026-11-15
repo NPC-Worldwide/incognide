@@ -5,7 +5,8 @@
     "description": "Chat and agent transcripts, including indexed coding-agent history.",
     "group": "Chat",
     "defaultEnabled": true,
-    "sensitive": false
+    "sensitive": false,
+    "payloadVersion": 1
   },
   {
     "id": "bookmarks",
@@ -13,7 +14,8 @@
     "description": "Saved links and folders.",
     "group": "Browsing",
     "defaultEnabled": true,
-    "sensitive": false
+    "sensitive": false,
+    "payloadVersion": 1
   },
   {
     "id": "browser_history",
@@ -21,7 +23,8 @@
     "description": "Pages visited, with visit counts and folder context.",
     "group": "Browsing",
     "defaultEnabled": true,
-    "sensitive": false
+    "sensitive": false,
+    "payloadVersion": 1
   },
   {
     "id": "pdf_annotations",
@@ -29,7 +32,8 @@
     "description": "Highlighted text, notes, and ink on PDFs.",
     "group": "Documents",
     "defaultEnabled": true,
-    "sensitive": false
+    "sensitive": false,
+    "payloadVersion": 2
   },
   {
     "id": "knowledge_graph",
@@ -37,7 +41,8 @@
     "description": "Entities, relations, triples, and locations.",
     "group": "Knowledge",
     "defaultEnabled": true,
-    "sensitive": false
+    "sensitive": false,
+    "payloadVersion": 2
   },
   {
     "id": "agent_registry",
@@ -45,7 +50,8 @@
     "description": "Which coding agents are installed, pinned, and labelled.",
     "group": "Agents",
     "defaultEnabled": true,
-    "sensitive": false
+    "sensitive": false,
+    "payloadVersion": 1
   },
   {
     "id": "agent_transcripts",
@@ -53,7 +59,8 @@
     "description": "Conversations ingested from Codex, Claude Code, and OpenCode.",
     "group": "Agents",
     "defaultEnabled": true,
-    "sensitive": false
+    "sensitive": false,
+    "payloadVersion": 1
   },
   {
     "id": "npcsh_history",
@@ -61,7 +68,8 @@
     "description": "Conversations from your npcsh shell sessions.",
     "group": "Agents",
     "defaultEnabled": true,
-    "sensitive": false
+    "sensitive": false,
+    "payloadVersion": 1
   },
   {
     "id": "file_index",
@@ -69,6 +77,7 @@
     "description": "Paths and previews of files you have indexed.",
     "group": "Documents",
     "defaultEnabled": false,
-    "sensitive": false
+    "sensitive": false,
+    "payloadVersion": 2
   }
 ]

@@ -39,6 +39,7 @@ readPdfText: (filePath) =>
     // conversation_history so they are FTS-searchable and sync with everything else.
     agentHistoryIngest: (opts) => ipcRenderer.invoke('agent-history:ingest', opts),
     agentHistoryStats: () => ipcRenderer.invoke('agent-history:stats'),
+    syncMarkCategoriesPushed: (ids) => ipcRenderer.invoke('sync:mark-categories-pushed', ids),
     // Forces a fresh main-process discovery pass; agentsDiscover is cached.
     agentsRefresh: () => ipcRenderer.invoke('agents:refresh'),
     agentsList: () => ipcRenderer.invoke('agents:list'),
