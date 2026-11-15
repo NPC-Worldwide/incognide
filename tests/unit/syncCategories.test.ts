@@ -84,7 +84,7 @@ const SCHEMA = [
   `CREATE TABLE kg_entities (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, entity_type TEXT)`,
   `CREATE TABLE kg_relations (id INTEGER PRIMARY KEY AUTOINCREMENT, source_id INTEGER, target_id INTEGER, relation_type TEXT)`,
   `CREATE TABLE kg_triples (id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT, predicate TEXT, object TEXT)`,
-  `CREATE TABLE file_index (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, filename TEXT)`,
+  `CREATE TABLE file_index (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, filename TEXT, mtime INTEGER, indexed_at DATETIME)`,
 ];
 
 /** Every category off; tests opt specific ones in. */
@@ -240,6 +240,39 @@ describe('export filtering', () => {
     const res = await exportWith({ ...ALL_OFF, bookmarks: true });
     expect(res.bookmarks).toHaveLength(1);
     expect(res.messages).toHaveLength(0);
+  });
+
+  it('filters file_index on indexed_at, not mtime', async () => {
+    // Regression: the first version filtered on `mtime`, which is when the FILE
+    // last changed on disk. A file from 2019 that was indexed today therefore had
+    // a 2019 mtime and was excluded from every incremental sync forever, while a
+    // file whose row was indexed a year ago but whose mtime was recent got re-sent
+    // on every sync. The cursor must track indexed_at.
+    const file = path.join(tmpRoot, 'history.db');
+    const db = await new Promise<sqlite3.Database>((res, rej) => {
+      const d = new sqlite3.Database(file, (e) => (e ? rej(e) : res(d)));
+    });
+    const run = (sql: string, params: any[] = []) =>
+      new Promise<void>((res, rej) => db.run(sql, params, (e) => (e ? rej(e) : res())));
+
+    await run(`DELETE FROM file_index`);
+    // Indexed long ago, but the file itself was touched recently.
+    await run(`INSERT INTO file_index (path, filename, mtime, indexed_at)
+               VALUES ('/stale.txt','stale.txt',?,datetime('now'))`, [Date.now()]);
+    // Modified in 2019, indexed now.
+    await run(`INSERT INTO file_index (path, filename, mtime, indexed_at)
+               VALUES ('/old.txt','old.txt',?,datetime('now'))`, [1546300800000]);
+    await new Promise<void>((res) => db.close(() => res()));
+
+    const res = await handlers['sync:export-data']({}, {
+      categories: { ...ALL_OFF, file_index: true },
+      since: '2026-01-01T00:00:00.000Z',
+    });
+
+    const paths = (res.fileIndex || []).map((r: any) => r.path).sort();
+    // Both were indexed just now, so both belong in the window regardless of
+    // when the files themselves were last modified.
+    expect(paths).toEqual(['/old.txt', '/stale.txt']);
   });
 
   it('controls the agent registry payload', async () => {

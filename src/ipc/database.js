@@ -1135,12 +1135,19 @@ function register(ctx) {
 
       if (enabled.has('file_index')) {
         jobs.push((async () => {
-          // file_index.mtime is an INTEGER epoch, not a timestamp string, so it
-          // cannot be compared against sinceTs directly. Normalise the cursor to
-          // epoch ms and compare numerically.
-          const sinceMs = Date.parse(sinceTs) || 0;
+          // Filter on indexed_at, NOT mtime.
+          //
+          // `indexed_at` is when the row entered the index (written as
+          // datetime('now')), which is what a sync cursor should track.
+          // `mtime` is when the file on disk last changed: a file from 2019
+          // indexed today has a 2019 mtime, so filtering on it would exclude
+          // that row from every incremental sync forever. The first version of
+          // this query made exactly that mistake.
+          //
+          // indexed_at is a datetime string, so it uses the same
+          // format-agnostic datetime() comparison as the other categories.
           result.fileIndex = await query(
-            `SELECT * FROM file_index WHERE mtime > ? ORDER BY mtime ASC`, [sinceMs]);
+            `SELECT * FROM file_index WHERE datetime(indexed_at) > datetime(?) ORDER BY indexed_at ASC`, [sinceTs]);
         })());
       }
 

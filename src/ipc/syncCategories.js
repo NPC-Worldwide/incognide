@@ -30,9 +30,14 @@ const sqlite3 = require('sqlite3');
 /**
  * Category registry.
  *
- * `tables` maps each category to the SQLite tables it covers, which is what the
- * exporter uses to build its query set. `countable: false` means "present in the
- * UI but nothing to count" (used while a source has no data yet).
+ * `tables` maps each category to the SQLite tables it covers. `timeColumn` names
+ * the column an incremental sync should compare against the cursor — keep it
+ * accurate, because it is the reference the export queries were written from.
+ * The export SQL itself is hand-written in database.js (each category needs its
+ * own filter semantics), so `timeColumn` is descriptive rather than executed;
+ * a wrong value here means the query and the description disagree.
+ *
+ * `timeColumn: null` means the table has no natural cursor and is sent whole.
  */
 /**
  * Table/filter wiring, keyed by category id.
@@ -50,13 +55,13 @@ const TABLE_WIRING = {
     bookmarks: [{ table: 'bookmarks', timeColumn: 'timestamp', entity: 'bookmark', idColumn: 'id' }],
     browser_history: [{ table: 'browser_history', timeColumn: 'last_visited', entity: 'history', idColumn: 'id' }],
     pdf_annotations: [
-        { table: 'pdf_highlights', timeColumn: null, entity: 'pdf_highlight', idColumn: 'id' },
-        { table: 'pdf_drawings', timeColumn: null, entity: 'pdf_drawing', idColumn: 'id' },
+        { table: 'pdf_highlights', timeColumn: 'timestamp', entity: 'pdf_highlight', idColumn: 'id' },
+        { table: 'pdf_drawings', timeColumn: 'timestamp', entity: 'pdf_drawing', idColumn: 'id' },
     ],
     knowledge_graph: [
-        { table: 'kg_entities', timeColumn: null, entity: 'kg_entity', idColumn: 'id' },
-        { table: 'kg_relations', timeColumn: null, entity: 'kg_relation', idColumn: 'id' },
-        { table: 'kg_triples', timeColumn: null, entity: 'kg_triple', idColumn: 'id' },
+        { table: 'kg_entities', timeColumn: 'updated_at', entity: 'kg_entity', idColumn: 'id' },
+        { table: 'kg_relations', timeColumn: 'created_at', entity: 'kg_relation', idColumn: 'id' },
+        { table: 'kg_triples', timeColumn: 'created_at', entity: 'kg_triple', idColumn: 'id' },
     ],
     agent_registry: [{ table: 'agents', timeColumn: null, entity: 'agent', idColumn: 'id' }],
     file_index: [{ table: 'file_index', timeColumn: 'indexed_at', entity: 'file_index', idColumn: 'id' }],
