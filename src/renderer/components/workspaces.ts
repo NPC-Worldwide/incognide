@@ -25,6 +25,7 @@ export const serializeWorkspace = (
             contentType: tab.contentType,
             contentId: tab.contentId,
             browserUrl: tab.browserUrl,
+            shellType: tab.shellType,
             title: tab.title,
             fileChanged: tab.fileChanged,
             model: tab.model,
@@ -35,6 +36,7 @@ export const serializeWorkspace = (
         serializedContentData[paneId] = {
             contentType: paneData.contentType,
             contentId: paneData.contentId,
+            shellType: paneData.shellType,
             displayedMessageCount: paneData.chatMessages?.displayedMessageCount,
             browserUrl: paneData.browserUrl,
             fileChanged: paneData.fileChanged,
@@ -134,6 +136,7 @@ export const deserializeWorkspace = async (
             contentDataRef.current[paneId] = {
                 contentType: contentType,
                 contentId: paneData.contentId,
+                shellType: paneData.shellType,
                 displayedMessageCount: paneData.displayedMessageCount,
                 browserUrl: paneData.browserUrl,
                 fileChanged: paneData.fileChanged || false,

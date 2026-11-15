@@ -35,6 +35,12 @@ readPdfText: (filePath) =>
 
     // Agent discovery / registry (issue #397)
     agentsDiscover: () => ipcRenderer.invoke('agents:discover'),
+    // Agent history ingestion: normalizes codex/claude/opencode transcripts into
+    // conversation_history so they are FTS-searchable and sync with everything else.
+    agentHistoryIngest: (opts) => ipcRenderer.invoke('agent-history:ingest', opts),
+    agentHistoryStats: () => ipcRenderer.invoke('agent-history:stats'),
+    // Forces a fresh main-process discovery pass; agentsDiscover is cached.
+    agentsRefresh: () => ipcRenderer.invoke('agents:refresh'),
     agentsList: () => ipcRenderer.invoke('agents:list'),
     agentsUpdate: (payload) => ipcRenderer.invoke('agents:update', payload),
     agentsRemove: (id) => ipcRenderer.invoke('agents:remove', id),
@@ -243,6 +249,11 @@ readPdfText: (filePath) =>
     searchConversations: (data) => ipcRenderer.invoke('search-conversations', data),
     syncExportData: (data) => ipcRenderer.invoke('sync:export-data', data),
     syncImportData: (data) => ipcRenderer.invoke('sync:import-data', data),
+    // Per-category sync controls: the account panel renders from syncCategories
+    // and the export/import handlers filter by the same selection.
+    syncCategories: () => ipcRenderer.invoke('sync:categories'),
+    syncGetCategorySelection: () => ipcRenderer.invoke('sync:get-categories-selection'),
+    syncSetCategorySelection: (selection) => ipcRenderer.invoke('sync:set-categories', { selection }),
     analyzeDiskUsage: (path) => ipcRenderer.invoke('analyze-disk-usage', path),
     showPdf: (args) => ipcRenderer.send('show-pdf', args),
     updatePdfBounds: (bounds) => ipcRenderer.send('update-pdf-bounds', bounds),

@@ -41,6 +41,18 @@ const AGENT_CATALOG = [
 
 const AGENT_IDS = AGENT_CATALOG.map((a) => a.id);
 
+/**
+ * Every catalog command, as a Set, for consumers that need to know "is this
+ * shellType an agent binary we should exec?".
+ *
+ * terminal.js used to keep its own hand-written copy of this list, and the two
+ * drifted: `ollama` was in the catalog (so it appeared in the launcher) but
+ * missing from the spawn set, so clicking it fell through every branch of
+ * createTerminalSession and failed with "Unsupported shell type: ollama".
+ * Deriving it here makes drift impossible.
+ */
+const SPAWNABLE_AGENT_COMMANDS = new Set(AGENT_CATALOG.map((a) => a.command));
+
 const normalizeAgentId = (value) =>
     String(value || '')
         .trim()
@@ -199,17 +211,73 @@ const sanitizeAgentForSync = (record) => {
 // Discovery
 // ---------------------------------------------------------------------------
 
-const whichBinary = (command) => {
-    try {
-        const which = process.platform === 'win32' ? 'where' : 'which';
-        execSync(`${which} ${command}`, { stdio: 'ignore', timeout: 2000 });
-        return true;
-    } catch {
-        return false;
+/** Quote a word for /bin/sh single-quoted context. */
+const shQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`;
+
+/**
+ * Resolve many command names to availability in ONE login-shell invocation.
+ *
+ * Each name used to get its own `bash -lc`, so a 12-agent catalog sourced the
+ * user's entire login profile 12 times -- measured at ~350ms per pass, paid on
+ * every dropdown open. Batching costs one profile source for the whole catalog.
+ *
+ * The login shell is deliberate: the launcher execs agents with `bash -lc`, so
+ * the login PATH is what actually decides whether clicking an agent works. A
+ * binary reachable only through a profile-set PATH (~/.local/bin, nvm) is
+ * launchable but missed by a plain `which` in the Electron main process.
+ *
+ * Only lines that exactly match a requested name are accepted, so profile
+ * banner output (motd, fortune, version managers) cannot be mistaken for a hit.
+ */
+const resolveBinaries = (commands) => {
+    const unique = [...new Set((commands || []).filter(Boolean))];
+    const found = new Set();
+    if (unique.length === 0) return found;
+
+    if (process.platform === 'win32') {
+        for (const command of unique) {
+            try {
+                execSync(`where ${command}`, { stdio: 'ignore', timeout: 2000 });
+                found.add(command);
+            } catch {}
+        }
+        return found;
     }
+
+    const probes = unique
+        .map((command) => `command -v ${shQuote(command)} >/dev/null 2>&1 && printf '%s\n' ${shQuote(command)} || true`)
+        .join('\n');
+
+    const collect = (text) => {
+        for (const line of String(text || '').split('\n')) {
+            const name = line.trim();
+            if (name && unique.includes(name)) found.add(name);
+        }
+    };
+
+    try {
+        collect(execSync(`/bin/bash -lc ${shQuote(probes)}`, {
+            encoding: 'utf8',
+            timeout: 15000,
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }));
+    } catch (err) {
+        // A non-zero exit still leaves usable stdout.
+        collect(err && err.stdout);
+        // Anything the login shell never reported, retry against this process's
+        // own PATH as a last resort.
+        for (const command of unique) {
+            if (found.has(command)) continue;
+            try {
+                execSync(`which ${command}`, { stdio: 'ignore', timeout: 2000 });
+                found.add(command);
+            } catch {}
+        }
+    }
+    return found;
 };
 
-const describeAgent = (spec, home) => {
+const describeAgent = (spec, home, binaries) => {
     const homePaths = (spec.homes || [])
         .map((h) => path.join(home, h))
         .filter((p) => pathExists(p));
@@ -217,7 +285,7 @@ const describeAgent = (spec, home) => {
         .map((f) => path.join(home, f))
         .filter((p) => pathExists(p));
 
-    const installed = whichBinary(spec.command);
+    const installed = binaries.has(spec.command);
     const configured = homePaths.length > 0 || looseFiles.length > 0;
 
     return {
@@ -291,12 +359,19 @@ const discoverAgents = async ({ home } = {}) => {
     const registry = parseNpcshAgentCoders(readJsonSafe(registryPath));
     const registeredById = new Map(registry.map((r) => [r.id, r]));
 
+    // One batched login-shell probe for the whole catalog plus anything npcsh
+    // registered. Previously each agent shelled out separately.
+    const binaries = resolveBinaries([
+        ...AGENT_CATALOG.map((a) => a.command),
+        ...registry.map((r) => r.command),
+    ]);
+
     // Catalog agents, each enriched with its own config *and* with whatever
     // npcsh recorded about it. ~/.npcsh/agent_coders.json is the index for every
     // agent npcsh has attached -- not just for npcsh itself -- so its facts are
     // applied to any agent it names.
     const catalogAgents = AGENT_CATALOG.map((spec) => {
-        const agent = enrichAgent(describeAgent(spec, resolvedHome), resolvedHome);
+        const agent = enrichAgent(describeAgent(spec, resolvedHome, binaries), resolvedHome);
         const reg = registeredById.get(agent.id);
         if (!reg) return agent;
         return {
@@ -321,7 +396,7 @@ const discoverAgents = async ({ home } = {}) => {
             id,
             label: reg.command,
             command: reg.command,
-            installed: whichBinary(reg.command),
+            installed: binaries.has(reg.command),
             configured: true,
             homePath: npcshHome,
             indexPath: npcshHome,
@@ -376,6 +451,26 @@ const ensureTable = async (dbQuery) => {
 // exposed so tests can reset between temp databases
 const resetTableCache = () => {
     tableReady = false;
+    discoveryCache = null;
+};
+
+/**
+ * Cached discovery result.
+ *
+ * Discovery is not free: it stats every agent home dir and runs a login-shell
+ * PATH probe. The launcher used to re-run the whole pass on EVERY dropdown
+ * open, which both cost ~350ms and let the visible agent list mutate while the
+ * user was looking at it (a pin toggle or a race with a concurrent discovery
+ * pass could change the order mid-interaction).
+ *
+ * The list is now computed once at startup, served from here afterwards, and
+ * invalidated only by events that can actually change it: an explicit refresh,
+ * a local registry write (update/remove/import), or a home-dir change.
+ */
+let discoveryCache = null;
+
+const clearDiscoveryCache = () => {
+    discoveryCache = null;
 };
 
 const readRegistry = async (dbQuery) => {
@@ -427,21 +522,56 @@ const register = (ctx = {}) => {
     const { ipcMain, dbQuery } = ctx;
     const home = ctx.home || os.homedir();
 
+    /**
+     * Run discovery, persist what it learned, and return the merged list.
+     * This is the expensive path; callers should go through `agents:discover`.
+     */
+    const runDiscovery = async () => {
+        const discovered = await discoverAgents({ home });
+        const saved = await readRegistry(requireDb(dbQuery));
+        // Persist what discovery learned so labels/pins survive and the row
+        // list reflects every agent we have ever seen.
+        for (const a of mergeAgentRecords(discovered, saved)) {
+            if (a.custom) continue; // user rows already persisted
+            await upsertAgent(requireDb(dbQuery), {
+                id: a.id, label: a.label, command: a.command,
+                pinned: !!a.pinned, custom: false, source: a.source,
+            });
+        }
+        const all = await readRegistry(requireDb(dbQuery));
+        return mergeAgentRecords(discovered, all);
+    };
+
+    const cachedDiscovery = async () => {
+        if (discoveryCache && discoveryCache.home === home) {
+            return discoveryCache.agents;
+        }
+        const agents = await runDiscovery();
+        discoveryCache = { home, agents, at: Date.now() };
+        return agents;
+    };
+
+    /**
+     * Steady-state read. Served from cache, so opening the dropdown never
+     * recomputes anything and the list cannot shift under the user.
+     */
     ipcMain.handle('agents:discover', async () => {
         try {
-            const discovered = await discoverAgents({ home });
-            const saved = await readRegistry(requireDb(dbQuery));
-            // Persist what discovery learned so labels/pins survive and the row
-            // list reflects every agent we have ever seen.
-            for (const a of mergeAgentRecords(discovered, saved)) {
-                if (a.custom) continue; // user rows already persisted
-                await upsertAgent(requireDb(dbQuery), {
-                    id: a.id, label: a.label, command: a.command,
-                    pinned: !!a.pinned, custom: false, source: a.source,
-                });
-            }
-            const all = await readRegistry(requireDb(dbQuery));
-            return { agents: mergeAgentRecords(discovered, all), error: null };
+            return { agents: await cachedDiscovery(), error: null };
+        } catch (err) {
+            return { agents: [], error: err.message };
+        }
+    });
+
+    /**
+     * Force a fresh pass. The renderer calls this once at startup so a newly
+     * installed or removed binary is picked up, without re-probing on every
+     * menu open.
+     */
+    ipcMain.handle('agents:refresh', async () => {
+        try {
+            clearDiscoveryCache();
+            return { agents: await cachedDiscovery(), error: null };
         } catch (err) {
             return { agents: [], error: err.message };
         }
@@ -449,9 +579,7 @@ const register = (ctx = {}) => {
 
     ipcMain.handle('agents:list', async () => {
         try {
-            const discovered = await discoverAgents({ home });
-            const saved = await readRegistry(requireDb(dbQuery));
-            return { agents: mergeAgentRecords(discovered, saved), error: null };
+            return { agents: await cachedDiscovery(), error: null };
         } catch (err) {
             return { agents: [], error: err.message };
         }
@@ -473,6 +601,9 @@ const register = (ctx = {}) => {
                 custom: custom !== undefined ? custom : prev.custom,
                 source: prev.source,
             });
+            // A pin/label/custom change alters the merged list, so drop the
+            // cache and let the next read recompute with the new row.
+            clearDiscoveryCache();
             return { success: true, error: null };
         } catch (err) {
             return { error: err.message };
@@ -482,6 +613,7 @@ const register = (ctx = {}) => {
     ipcMain.handle('agents:remove', async (_, id) => {
         try {
             await deleteAgent(requireDb(dbQuery), id);
+            clearDiscoveryCache();
             return { success: true, error: null };
         } catch (err) {
             return { error: err.message };
@@ -491,9 +623,7 @@ const register = (ctx = {}) => {
     // Portable subset for cloud sync: no paths, no credential state.
     ipcMain.handle('agents:export', async () => {
         try {
-            const discovered = await discoverAgents({ home });
-            const saved = await readRegistry(requireDb(dbQuery));
-            const merged = mergeAgentRecords(discovered, saved);
+            const merged = await cachedDiscovery();
             return { agents: merged.map(sanitizeAgentForSync).filter(Boolean), error: null };
         } catch (err) {
             return { agents: [], error: err.message };
@@ -510,6 +640,7 @@ const register = (ctx = {}) => {
                 if (!clean || !clean.id) continue;
                 await upsertAgent(db, clean);
             }
+            clearDiscoveryCache();
             return { success: true, error: null };
         } catch (err) {
             return { error: err.message };
@@ -522,6 +653,7 @@ module.exports = {
     // exported for validation
     AGENT_CATALOG,
     AGENT_IDS,
+    SPAWNABLE_AGENT_COMMANDS,
     CREATE_AGENTS_TABLE,
     normalizeAgentId,
     expandHome,
@@ -531,4 +663,6 @@ module.exports = {
     sanitizeAgentForSync,
     discoverAgents,
     resetTableCache,
+    clearDiscoveryCache,
+    resolveBinaries,
 };

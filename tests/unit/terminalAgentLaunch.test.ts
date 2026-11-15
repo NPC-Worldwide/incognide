@@ -3,7 +3,7 @@
  *
  * Reported: "launching codex does nothing".
  *
- * Root cause: createTerminalSession had branches for system/npcsh/guac/python3
+ * Root cause: createTerminalSession had branches for system/npcsh/python3
  * but not for agent names. `shellType: 'codex'` matched nothing, so `shell` and
  * `args` stayed undefined and the handler reached pty.spawn(undefined). node-pty
  * ACCEPTS that and opens an ordinary login shell - so the app asked for codex

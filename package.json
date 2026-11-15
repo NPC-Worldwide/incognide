@@ -12,6 +12,242 @@
     "src/",
     "assets/icon.png"
   ],
+  "scripts": {
+    "generate-icons": "electron-icon-builder --input=./assets/icon.png --output=./build",
+    "reset-permissions": "tccutil reset Camera com.github.Electron 2>/dev/null; tccutil reset Microphone com.github.Electron 2>/dev/null; echo 'Permissions reset for Electron'",
+    "start": "cross-env NODE_ENV=development electron .",
+    "start:fresh": "npm run reset-permissions && npm run start",
+    "dev": "vite",
+    "build:vite": "vite build",
+    "build": "npm run build:vite && electron-builder",
+    "preview": "vite preview",
+    "rebuild": "electron-rebuild -o sqlite3,node-pty || echo 'electron-rebuild failed (non-fatal) - native modules may need manual rebuild'",
+    "electron:install-deps": "electron-builder install-app-deps",
+    "electron:rebuild": "npx electron-rebuild --module-dir . --which-module sqlite3 --force",
+    "electron:build": "electron-builder",
+    "pack": "npm run build && npm run electron:build",
+    "postinstall": "npm run rebuild || echo 'electron-rebuild failed (non-fatal) - native modules may need manual rebuild'",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "screenshots:seed": "tsx scripts/screenshots/seed.ts",
+    "screenshots": "tsx scripts/screenshots/capture.ts",
+    "screenshots:check": "tsx scripts/screenshots/capture.ts --check"
+  },
+  "build": {
+    "appId": "com.incognide.chat",
+    "productName": "incognide",
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist-electron"
+    },
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "PDF Document"
+      },
+      {
+        "ext": "txt",
+        "name": "Text Document"
+      },
+      {
+        "ext": "md",
+        "name": "Markdown Document"
+      },
+      {
+        "ext": "png",
+        "name": "Image"
+      },
+      {
+        "ext": "jpg",
+        "name": "Image"
+      },
+      {
+        "ext": "jpeg",
+        "name": "Image"
+      },
+      {
+        "ext": "gif",
+        "name": "Image"
+      },
+      {
+        "ext": "svg",
+        "name": "Image"
+      },
+      {
+        "ext": "mp4",
+        "name": "Video"
+      },
+      {
+        "ext": "avi",
+        "name": "Video"
+      },
+      {
+        "ext": "mkv",
+        "name": "Video"
+      },
+      {
+        "ext": "mov",
+        "name": "Video"
+      },
+      {
+        "ext": "docx",
+        "name": "Word Document"
+      },
+      {
+        "ext": "odt",
+        "name": "OpenDocument Text"
+      },
+      {
+        "ext": "js",
+        "name": "Code"
+      },
+      {
+        "ext": "ts",
+        "name": "Code"
+      },
+      {
+        "ext": "py",
+        "name": "Code"
+      },
+      {
+        "ext": "html",
+        "name": "Code"
+      },
+      {
+        "ext": "css",
+        "name": "Code"
+      },
+      {
+        "ext": "json",
+        "name": "Code"
+      }
+    ],
+    "files": [
+      "dist/**/*",
+      "src/**/*",
+      "package.json",
+      "node_modules/sqlite3/**/*",
+      "node_modules/sharp/**/*",
+      "node_modules/node-pty/**/*"
+    ],
+    "mac": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.inherit.plist",
+      "notarize": true,
+      "extendInfo": {
+        "NSCameraUsageDescription": "This app needs camera access for video calls and media capture.",
+        "NSMicrophoneUsageDescription": "This app needs microphone access for audio recording and voice input.",
+        "NSScreenCaptureUsageDescription": "This app needs screen capture access for screenshots.",
+        "NSAppleEventsUsageDescription": "This app needs automation access to open System Settings."
+      },
+      "extraResources": [
+        {
+          "from": "resources/backend/incognide_serve",
+          "to": "backend/incognide_serve"
+        }
+      ]
+    },
+    "mas": {
+      "entitlements": "resources/entitlements.mas.plist",
+      "entitlementsInherit": "resources/entitlements.mas.inherit.plist",
+      "hardenedRuntime": false,
+      "minimumSystemVersion": "12.0",
+      "category": "public.app-category.productivity",
+      "provisioningProfile": "incognide_mas.provisionprofile",
+      "identity": "Apple Distribution",
+      "extendInfo": {
+        "LSMinimumSystemVersion": "12.0",
+        "NSCameraUsageDescription": "This app needs camera access for video calls and media capture.",
+        "NSMicrophoneUsageDescription": "This app needs microphone access for audio recording and voice input.",
+        "NSScreenCaptureUsageDescription": "This app needs screen capture access for screenshots.",
+        "NSAppleEventsUsageDescription": "This app needs automation access to open System Settings."
+      }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.png",
+      "extraResources": [
+        {
+          "from": "resources/backend/incognide_serve.exe",
+          "to": "backend/incognide_serve.exe"
+        }
+      ],
+      "extraFiles": [
+        {
+          "from": "node_modules/electron/dist/icudtl.dat",
+          "to": "icudtl.dat"
+        },
+        {
+          "from": "node_modules/electron/dist",
+          "to": ".",
+          "filter": [
+            "*.dll"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        "deb",
+        "AppImage"
+      ],
+      "category": "Utility",
+      "icon": "assets/icon.png",
+      "extraResources": [
+        {
+          "from": "resources/backend/incognide_serve",
+          "to": "backend/incognide_serve"
+        }
+      ]
+    },
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/sqlite3/**/*",
+      "node_modules/sharp/**/*",
+      "node_modules/node-pty/**/*"
+    ],
+    "buildDependenciesFromSource": false,
+    "nodeGypRebuild": false,
+    "npmRebuild": false,
+    "forceCodeSigning": false,
+    "protocols": [
+      {
+        "name": "Incognide URL",
+        "schemes": [
+          "incognide"
+        ]
+      }
+    ]
+  },
   "dependencies": {
     "@clerk/clerk-react": "^5.2.0",
     "@codemirror/autocomplete": "^6.20.0",
@@ -83,6 +319,7 @@
     "remark-math": "^6.0.0",
     "shpjs": "^6.2.0",
     "simple-git": "^3.28.0",
+    "sqlite3": "^5.0.11",
     "ssh2": "^1.17.0",
     "three": "^0.183.2",
     "tokml": "^0.4.0",
@@ -90,13 +327,39 @@
     "xlsx": "^0.18.5",
     "xterm": "^5.3.0"
   },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "@playwright/test": "^1.58.2",
+    "@tailwindcss/typography": "^0.5.16",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.6",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "cross-env": "^10.1.0",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
+    "electron-icon-builder": "^2.0.1",
+    "eslint": "^9.18.0",
+    "eslint-plugin-react": "^7.37.4",
+    "jsdom": "^28.1.0",
+    "postcss": "^8.5.1",
+    "supabase": "^2.6.8",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.3",
+    "vite": "^6.2.1",
+    "vite-plugin-static-copy": "^3.1.1",
+    "vitest": "^4.1.0",
+    "tsx": "^4.19.2"
+  },
   "engines": {
     "node": ">=16"
   },
   "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.66.0",
-    "node-pty": "^1.1.0-beta42",
-    "sqlite3": "^6.0.1"
+    "node-pty": "^1.1.0-beta42"
   },
   "overrides": {
     "react": "^19.0.0",

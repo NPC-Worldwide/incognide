@@ -48,7 +48,7 @@ const defaultTilesConfig = {
     { id: 'chat', label: 'Chat', icon: 'plus', enabled: true, order: 1 },
     { id: 'folder', label: 'Folder', icon: 'folder', enabled: true, order: 2 },
     { id: 'browser', label: 'Browser', icon: 'globe', enabled: true, order: 3 },
-    { id: 'terminal', label: 'Terminal', icon: 'terminal', enabled: true, order: 4, subTypes: ['system', 'npcsh', 'guac'] },
+    { id: 'terminal', label: 'Terminal', icon: 'terminal', enabled: true, order: 4, subTypes: ['system', 'npcsh'] },
     { id: 'code', label: 'Code', icon: 'code', enabled: true, order: 5 },
     { id: 'document', label: 'Doc', icon: 'file-text', enabled: true, order: 6, subTypes: ['docx', 'xlsx', 'pptx', 'mapx'] },
     { id: 'workspace', label: 'Incognide', icon: 'incognide', enabled: true, order: 7 }
@@ -4176,19 +4176,20 @@ function register(ctx) {
 
   ipcMain.handle('get-activity-predictions', async (event) => {
     try {
-        const [browserRows, commandRows, jinxRows, memoryRows, activityRows] = await Promise.all([
+        // Only live tables feed "recent activity".
+        //
+        // command_history, jinx_executions and memory_lifecycle are legacy npcsh
+        // tables: nothing in this app writes them any more (their newest rows are
+        // 2025-09-17, 2026-06-11 and 2026-02-28 respectively). Reading them here
+        // would surface year-old rows as "recent", so they are excluded. The
+        // activity_log and browser_history tables are both actively written.
+        const [browserRows, activityRows] = await Promise.all([
             dbQuery(`SELECT title, url, MAX(last_visited) as timestamp, 'website_visit' as type FROM browser_history GROUP BY url ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
-            dbQuery(`SELECT command, timestamp, 'terminal_command' as type FROM command_history ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
-            dbQuery(`SELECT jinx_name, timestamp, 'jinx_execution' as type FROM jinx_executions ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
-            dbQuery(`SELECT initial_memory, npc, timestamp, 'memory_created' as type FROM memory_lifecycle ORDER BY timestamp DESC LIMIT 100`).catch(() => []),
             dbQuery(`SELECT activity_type, activity_data, timestamp, npc FROM activity_log ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
         ]);
 
         const recentActivities = [
             ...browserRows.map(r => ({ type: r.type, data: { url: r.url, title: r.title }, timestamp: r.timestamp })),
-            ...commandRows.map(r => ({ type: r.type, data: { command: r.command }, timestamp: r.timestamp })),
-            ...jinxRows.map(r => ({ type: r.type, data: { command: r.jinx_name }, timestamp: r.timestamp })),
-            ...memoryRows.map(r => ({ type: r.type, data: { memory: r.initial_memory, npc: r.npc }, timestamp: r.timestamp })),
             ...activityRows.map(r => { let d = {}; try { d = JSON.parse(r.activity_data || '{}'); } catch {} return { type: r.activity_type, data: d, timestamp: r.timestamp }; }),
         ].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()).slice(0, 100);
 
@@ -4229,7 +4230,6 @@ function register(ctx) {
                 peakHours
             },
             recentActivities,
-            memoryCount: memoryRows.length
         };
     } catch (err) {
         console.error('Error getting activity data from local DB:', err);

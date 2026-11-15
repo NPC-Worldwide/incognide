@@ -54,20 +54,32 @@ function resolveLoginShell() {
 /**
  * shellTypes that mean "open a login shell, then launch this agent binary".
  *
- * Kept in sync with the discovery catalog in agents.js. Before this set
- * existed, these values fell through every branch of createTerminalSession and
- * were spawned with an undefined binary.
+ * Derived from the discovery catalog in agents.js so the launcher and the
+ * spawner can never disagree about which commands are agents. If agents.js
+ * cannot be loaded the set is empty, which degrades to "Unsupported shell
+ * type" rather than to a silently wrong shell.
  */
-const DISCOVERABLE_AGENT_COMMANDS = new Set([
-  'codex', 'claude', 'gemini', 'opencode', 'nanocoder',
-  'qwen', 'hermes', 'pi', 'deepseek', 'openclaw', 'aider', 'cursor-agent',
-]);
+let DISCOVERABLE_AGENT_COMMANDS;
+try {
+  const { SPAWNABLE_AGENT_COMMANDS } = require('./agents');
+  DISCOVERABLE_AGENT_COMMANDS = SPAWNABLE_AGENT_COMMANDS instanceof Set
+    ? SPAWNABLE_AGENT_COMMANDS
+    : new Set();
+} catch (err) {
+  DISCOVERABLE_AGENT_COMMANDS = new Set();
+}
+
+/**
+ * Fallbacks for agents a user may have added by hand that are not in the
+ * catalog. Kept separate so the catalog stays the source of truth.
+ */
+const EXTRA_AGENT_COMMANDS = ['aider', 'cursor-agent'];
 
 /**
  * Wire a freshly spawned PTY to the renderer and record it.
  *
- * Extracted because the main spawn and the ipython fallback had identical
- * onData/onExit plumbing, and the agent path needs exactly the same wiring.
+ * Extracted so the main spawn and the agent path share exactly the same
+ * onData/onExit wiring.
  */
 function wireSession(id, ptyProcess, webContents, shellType) {
   const session = { ptyProcess, webContents, shellType };
@@ -123,11 +135,6 @@ function register(ctx) {
     if (shellType === 'npcsh') {
       shell = 'npcsh';
       args = [];
-    } else if (shellType === 'guac' || shellType === 'ipython') {
-
-      shell = 'guac';
-      args = [];
-
     } else if (shellType === 'python3' || shellType === 'python') {
 
       try {
@@ -160,13 +167,19 @@ function register(ctx) {
       }
       args = ['-i'];
       actualShellType = 'python3';
-    } else if (DISCOVERABLE_AGENT_COMMANDS.has(shellType)) {
+    } else if (DISCOVERABLE_AGENT_COMMANDS.has(shellType) || EXTRA_AGENT_COMMANDS.includes(shellType)) {
       // Run the agent as the PTY process itself, via a login shell so the
       // profile has been sourced and PATH includes user bin dirs.
       //
       // Deliberately NOT "open bash then type the command": that needs prompt
       // detection and races the renderer's own writes to the session, and when
       // it loses the race the terminal just shows a bash prompt.
+      //
+      // Also deliberately no pre-flight PATH probe. `exec <missing>` inside the
+      // login shell already prints a clear "command not found" and exits 127,
+      // in the user's own terminal, which is a better error surface than an IPC
+      // refusal. Hiding uninstalled agents is the launcher's job (discovery
+      // reports `installed`), not the spawner's.
       if (os.platform() === 'win32') {
         shell = 'powershell.exe';
         args = ['-NoLogo', '-Command', `${shellType}; exit`];
@@ -267,23 +280,6 @@ function register(ctx) {
       return { success: true, shell: actualShellType };
 
     } catch (error) {
-
-      if (shellType === 'guac' || shellType === 'ipython') {
-        try {
-          const ptyProcess = pty.spawn('ipython', [], {
-            name: 'xterm-256color',
-            cols: cols || 80,
-            rows: rows || 24,
-            cwd: workingDir,
-            env: cleanEnv
-          });
-
-          wireSession(id, ptyProcess, senderWebContents, 'ipython');
-          return { success: true, shell: 'ipython' };
-        } catch (ipythonError) {
-          return { success: false, error: `Neither guac nor ipython available: ${error.message}` };
-        }
-      }
       return { success: false, error: String(error?.message || error || 'Unknown terminal error') };
     }
   });

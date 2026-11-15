@@ -595,7 +595,7 @@ const Sidebar = (props: any) => {
             { id: 'chat', label: 'Chat', icon: 'plus', enabled: true, order: 1 },
             { id: 'folder', label: 'Folder', icon: 'folder', enabled: true, order: 2 },
             { id: 'browser', label: 'Browser', icon: 'globe', enabled: true, order: 3 },
-            { id: 'terminal', label: 'Terminal', icon: 'terminal', enabled: true, order: 4, subTypes: ['system', 'npcsh', 'guac'] },
+            { id: 'terminal', label: 'Terminal', icon: 'terminal', enabled: true, order: 4, subTypes: ['system', 'npcsh'] },
             { id: 'code', label: 'Code', icon: 'code', enabled: true, order: 5 },
             { id: 'document', label: 'Doc', icon: 'file-text', enabled: true, order: 6, subTypes: ['docx', 'xlsx', 'pptx'] },
             { id: 'workspace', label: 'Workspace', icon: 'workspace', enabled: true, order: 7 }

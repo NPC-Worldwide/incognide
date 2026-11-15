@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Terminal, Sparkles, Bot, ChevronDown, Plus, Star, MessageSquare, Globe, GripVertical } from 'lucide-react';
 import { useAiEnabled } from './AiFeatureContext';
 
@@ -8,7 +8,7 @@ import { useAiEnabled } from './AiFeatureContext';
 const FALLBACK_AGENT_COMMANDS = ['npcsh', 'opencode', 'nanocoder', 'gemini', 'claude', 'codex', 'qwen', 'hermes', 'pi'];
 
 // Actions already provided by `fixedActions`; discovery must not duplicate them.
-const RESERVED_ACTION_IDS = new Set(['chat', 'agent', 'browser', 'system', 'npcsh', 'guac']);
+const RESERVED_ACTION_IDS = new Set(['chat', 'agent', 'browser', 'system', 'npcsh']);
 
 interface DiscoveredAgent {
     id: string;
@@ -49,7 +49,7 @@ const loadQuickActions = (): string[] => {
     return legacy ? [legacy] : ['system'];
 };
 
-const AI_ONLY_ACTIONS = new Set(['chat', 'agent', 'npcsh', 'guac']);
+const AI_ONLY_ACTIONS = new Set(['chat', 'agent', 'npcsh']);
 
 const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTerminal, createNewConversation, createNewBrowser }) => {
     const aiEnabled = useAiEnabled();
@@ -110,30 +110,46 @@ const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTe
         };
     }, []);
 
-    useEffect(() => {
-        if (!terminalDropdownOpen) return;
-        (async () => {
-            try {
-                // Ask the main process for the full picture (it merges the
-                // catalog, each agent's home dir, npcsh's registry, and the
-                // user-editable `agents` table). Degrade to a plain binary
-                // check if that is unavailable.
-                const discovered = await (window as any).api?.agentsDiscover?.();
-                if (discovered?.agents?.length) {
-                    setDiscoveredAgents(discovered.agents);
-                    const installed: Record<string, boolean> = {};
-                    for (const a of discovered.agents) {
-                        if (a.installed) installed[a.command] = true;
-                    }
-                    setInstalledAgents(installed);
-                } else {
-                    const allCmds = [...FALLBACK_AGENT_COMMANDS];
-                    const r = await (window as any).api?.checkBinaries?.(allCmds);
-                    setInstalledAgents(r || {});
+    /**
+     * Load the agent list once, then leave it alone.
+     *
+     * This used to run on every dropdown open. Each pass stat'd every agent
+     * home dir and probed PATH, and because the result was stored in state the
+     * menu could visibly reflow while the user was reading it - pinning an
+     * entry or colliding with an in-flight pass changed the order mid-click.
+     *
+     * Now it runs at mount (and on an explicit refresh), and the main process
+     * serves it from a cache so no probing happens on open at all.
+     */
+    const loadAgents = useCallback(async ({ refresh = false }: { refresh?: boolean } = {}) => {
+        const api = (window as any).api;
+        try {
+            // `agentsRefresh` forces a fresh main-process pass; plain
+            // `agentsDiscover` returns the cached list and does no I/O.
+            const ask = refresh && api?.agentsRefresh ? api.agentsRefresh : api?.agentsDiscover;
+            const payload = await ask?.();
+
+            if (payload?.agents?.length) {
+                setDiscoveredAgents(payload.agents);
+                const installed: Record<string, boolean> = {};
+                for (const a of payload.agents) {
+                    if (a.installed) installed[a.command] = true;
                 }
-            } catch {}
-        })();
-    }, [terminalDropdownOpen]);
+                setInstalledAgents(installed);
+                return;
+            }
+
+            // Discovery unavailable: degrade to a plain binary check so the
+            // menu can still offer something useful.
+            const r = await api?.checkBinaries?.([...FALLBACK_AGENT_COMMANDS]);
+            setInstalledAgents(r || {});
+        } catch {}
+    }, []);
+
+    // Populate once at startup so the first open is already complete.
+    useEffect(() => {
+        loadAgents({ refresh: true });
+    }, [loadAgents]);
 
     useEffect(() => {
         if (!terminalDropdownOpen) return;
@@ -156,7 +172,6 @@ const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTe
         actions.push({ id: 'system', label: 'Bash', kind: 'terminal' });
         if (aiEnabled) {
             actions.push({ id: 'npcsh', label: 'npcsh', kind: 'terminal' });
-            actions.push({ id: 'guac', label: 'guac', kind: 'terminal' });
         }
         return actions;
     }, [aiEnabled]);
@@ -171,11 +186,19 @@ const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTe
         };
         if (aiEnabled) {
             if (discoveredAgents.length > 0) {
-                // Installed, configured, or user-added agents. `push` dedupes by
-                // command so a discovery entry and a user entry cannot collide.
+                // Only list agents that will actually launch. `configured` means a
+                // config directory exists, which is NOT proof the binary is still
+                // installed - a leftover ~/.gemini made Gemini CLI appear in the
+                // menu while `exec gemini` failed with "not found". User-added
+                // agents stay visible regardless, since adding one is explicit
+                // intent and the launcher now reports a clear error if it is
+                // missing.
+                //
+                // `push` dedupes by command so a discovery entry and a user entry
+                // cannot collide.
                 for (const agent of discoveredAgents) {
                     if (RESERVED_ACTION_IDS.has(agent.id)) continue;
-                    if (!agent.installed && !agent.configured && !agent.custom) continue;
+                    if (!agent.installed && !agent.custom) continue;
                     push({
                         id: agent.command,
                         label: agent.label || agent.command,
@@ -242,7 +265,11 @@ const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTe
         return agent?.detectedModel || null;
     };
 
-    const primaryActionId = quickActions[0] || 'system';
+    // The primary button must resolve to something that exists. A saved quick
+    // action can name a type this build no longer knows about, and using
+    // quickActions[0] blindly left the main button rendering an icon but doing
+    // nothing.
+    const primaryActionId = quickActions.find((id) => actionById.has(id)) || 'system';
     const primaryAction = actionById.get(primaryActionId);
     const extraQuickActions = quickActions.slice(1).filter(id => actionById.has(id));
 
@@ -369,10 +396,10 @@ const TerminalCreateButton: React.FC<TerminalCreateButtonProps> = ({ createNewTe
                                                 command: newAgentCommand,
                                                 custom: true,
                                             });
-                                            const r = await (window as any).api?.checkBinaries?.([newAgentCommand]);
-                                            setInstalledAgents(prev => ({ ...prev, ...(r || {}) }));
-                                            const refreshed = await (window as any).api?.agentsDiscover?.();
-                                            if (refreshed?.agents?.length) setDiscoveredAgents(refreshed.agents);
+                                            // Adding an agent writes to the registry, which
+                                            // invalidates the main-process cache, so a plain
+                                            // cached read now returns the new row.
+                                            await loadAgents();
                                         } catch {}
                                         setNewAgentName(''); setNewAgentCommand(''); setShowAddAgentPrompt(false);
                                     }}

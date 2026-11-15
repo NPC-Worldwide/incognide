@@ -1,0 +1,74 @@
+[
+  {
+    "id": "conversations",
+    "label": "Conversations & messages",
+    "description": "Chat and agent transcripts, including indexed coding-agent history.",
+    "group": "Chat",
+    "defaultEnabled": true,
+    "sensitive": false
+  },
+  {
+    "id": "bookmarks",
+    "label": "Bookmarks",
+    "description": "Saved links and folders.",
+    "group": "Browsing",
+    "defaultEnabled": true,
+    "sensitive": false
+  },
+  {
+    "id": "browser_history",
+    "label": "Browser history",
+    "description": "Pages visited, with visit counts and folder context.",
+    "group": "Browsing",
+    "defaultEnabled": true,
+    "sensitive": false
+  },
+  {
+    "id": "pdf_annotations",
+    "label": "PDF highlights & drawings",
+    "description": "Highlighted text, notes, and ink on PDFs.",
+    "group": "Documents",
+    "defaultEnabled": true,
+    "sensitive": false
+  },
+  {
+    "id": "knowledge_graph",
+    "label": "Knowledge graph",
+    "description": "Entities, relations, triples, and locations.",
+    "group": "Knowledge",
+    "defaultEnabled": true,
+    "sensitive": false
+  },
+  {
+    "id": "agent_registry",
+    "label": "Agent registry",
+    "description": "Which coding agents are installed, pinned, and labelled.",
+    "group": "Agents",
+    "defaultEnabled": true,
+    "sensitive": false
+  },
+  {
+    "id": "agent_transcripts",
+    "label": "Coding-agent transcripts",
+    "description": "Conversations ingested from Codex, Claude Code, and OpenCode.",
+    "group": "Agents",
+    "defaultEnabled": true,
+    "sensitive": false
+  },
+  {
+    "id": "npcsh_history",
+    "label": "npcsh history",
+    "description": "Conversations from your npcsh shell sessions.",
+    "group": "Agents",
+    "defaultEnabled": true,
+    "sensitive": false
+  },
+  {
+    "id": "file_index",
+    "label": "File index",
+    "description": "Paths and previews of files you have indexed.",
+    "group": "Documents",
+    "defaultEnabled": false,
+    "sensitive": false
+  }
+]

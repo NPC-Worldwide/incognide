@@ -74,12 +74,13 @@ afterEach(() => {
 });
 
 describe('agents IPC surface', () => {
-  it('registers all six handlers', () => {
+  it('registers the full handler set', () => {
     expect(Object.keys(handlers).sort()).toEqual([
       'agents:discover',
       'agents:export',
       'agents:import',
       'agents:list',
+      'agents:refresh',
       'agents:remove',
       'agents:update',
     ]);

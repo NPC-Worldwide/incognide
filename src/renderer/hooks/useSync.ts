@@ -7,9 +7,14 @@ import {
     decryptObject,
 } from '../utils/encryption';
 import { API_BASE_URL } from '../config';
+// Shared with src/ipc/syncCategories.js: the renderer can show the full list of
+// syncable categories before (or without) a main-process round trip.
+import SYNC_CATEGORY_DEFS from '../../shared/syncCategories.json';
 
 
 const LAST_SYNC_KEY = 'incognide-last-sync';
+/** Local mirror of the category selection, used when the IPC is unavailable. */
+const SYNC_CATS_KEY = 'incognide-sync-categories';
 const SYNC_FREQUENCY_KEY = 'incognide-sync-frequency';
 
 export const SYNC_FREQUENCIES = {
@@ -30,6 +35,17 @@ export interface SyncStats {
     durationMs: number;
 }
 
+export interface SyncCategory {
+    id: string;
+    label: string;
+    description: string;
+    group: string;
+    defaultEnabled: boolean;
+    sensitive?: boolean;
+    count: number;
+    available: boolean;
+}
+
 interface UseSyncReturn {
     syncStatus: SyncStatus;
     isOnline: boolean;
@@ -42,6 +58,12 @@ interface UseSyncReturn {
     triggerSync: () => Promise<void>;
     forceFullResync: () => Promise<void>;
     setSyncFrequency: (frequency: SyncFrequency) => void;
+    // Per-category selection
+    syncCategories: SyncCategory[];
+    categorySelection: Record<string, boolean>;
+    categoriesLoading: boolean;
+    toggleCategory: (id: string, enabled: boolean) => Promise<void>;
+    refreshCategories: () => Promise<void>;
 }
 
 export const useSync = (): UseSyncReturn => {
@@ -61,6 +83,40 @@ export const useSync = (): UseSyncReturn => {
         if (stored && stored in SYNC_FREQUENCIES) return stored as SyncFrequency;
         return '10m';
     });
+
+    /**
+     * Seeded from the shared definitions so the toggles appear immediately, then
+     * enriched with live row counts when `sync:categories` returns. Starting from
+     * an empty array meant the whole section rendered nothing until IPC replied,
+     * which is indistinguishable from "the feature is missing".
+     */
+    const [syncCategories, setSyncCategories] = useState<SyncCategory[]>(() =>
+        (SYNC_CATEGORY_DEFS as any[]).map((c) => ({
+            ...c,
+            count: 0,
+            available: false,
+        }))
+    );
+    const [categorySelection, setCategorySelection] = useState<Record<string, boolean>>(() => {
+        const defaults: Record<string, boolean> = {};
+        for (const c of SYNC_CATEGORY_DEFS as any[]) defaults[c.id] = !!c.defaultEnabled;
+
+        // A locally saved selection wins: it is what the user last chose, and it
+        // is readable before any IPC reply.
+        try {
+            const saved = localStorage.getItem(SYNC_CATS_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                const merged = { ...defaults };
+                for (const c of SYNC_CATEGORY_DEFS as any[]) {
+                    if (parsed[c.id] !== undefined) merged[c.id] = !!parsed[c.id];
+                }
+                return merged;
+            }
+        } catch {}
+        return defaults;
+    });
+    const [categoriesLoading, setCategoriesLoading] = useState(false);
 
     const syncInProgressRef = useRef(false);
     const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -82,6 +138,72 @@ export const useSync = (): UseSyncReturn => {
         setSyncFrequencyState(frequency);
         localStorage.setItem(SYNC_FREQUENCY_KEY, frequency);
     }, []);
+
+    /**
+     * Load the category list (with local row counts) and the saved selection.
+     * Counts come from the main process so the panel can show "12,431 messages"
+     * next to each toggle instead of guessing.
+     */
+    const refreshCategories = useCallback(async () => {
+        try {
+            setCategoriesLoading(true);
+            const res = await (window as any).api?.syncCategories?.();
+
+            if (Array.isArray(res?.categories) && res.categories.length > 0) {
+                // Merge by id: the shared defs provide label/group/order, the
+                // main process provides live counts and availability. A category
+                // that exists only locally still renders.
+                const liveById = new Map(res.categories.map((c: any) => [c.id, c]));
+                setSyncCategories((SYNC_CATEGORY_DEFS as any[]).map((def) => {
+                    const live: any = liveById.get(def.id);
+                    return {
+                        ...def,
+                        count: live?.count ?? 0,
+                        available: live?.available ?? false,
+                    };
+                }));
+            }
+
+            if (res?.selection) {
+                setCategorySelection(res.selection);
+                try { localStorage.setItem(SYNC_CATS_KEY, JSON.stringify(res.selection)); } catch {}
+            }
+        } catch (err) {
+            // Keep the seeded list; the toggles still work for the next sync.
+            console.error('[SYNC] Failed to load sync categories:', err);
+        } finally {
+            setCategoriesLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        refreshCategories();
+    }, [refreshCategories]);
+
+    /**
+     * Flip one category and persist immediately.
+     *
+     * Optimistic: the checkbox updates before the round trip so the toggle never
+     * feels laggy, and a failure reverts it.
+     */
+    const toggleCategory = useCallback(async (id: string, enabled: boolean) => {
+        const next = { ...categorySelection, [id]: enabled };
+        setCategorySelection(next);
+
+        // Persist locally first. This makes the toggle stick even if the
+        // main-process IPC is unavailable, and the export call passes the
+        // selection explicitly anyway, so a local-only choice still governs the
+        // very next sync.
+        try { localStorage.setItem(SYNC_CATS_KEY, JSON.stringify(next)); } catch {}
+
+        try {
+            const res = await (window as any).api?.syncSetCategorySelection?.(next);
+            if (res?.error) console.warn('[SYNC] Category selection not persisted to disk:', res.error);
+        } catch (err) {
+            // Non-fatal: the local mirror and the explicit export argument cover it.
+            console.warn('[SYNC] Failed to save category selection to main process:', err);
+        }
+    }, [categorySelection]);
 
     const triggerSync = useCallback(async () => {
         if (syncInProgressRef.current) return;
@@ -110,7 +232,14 @@ export const useSync = (): UseSyncReturn => {
             const needsFullDump = !initialSyncDone;
             const since = needsFullDump ? '1970-01-01T00:00:00.000Z' : (lastSyncRef.current?.toISOString() || '1970-01-01T00:00:00.000Z');
             setSyncProgress(5);
-            const data = await (window as any).api?.syncExportData?.({ since, fullDump: needsFullDump });
+            // The selection is read from main-process storage inside the handler,
+            // but passing it explicitly keeps an in-flight toggle from being lost
+            // between the panel and the export.
+            const data = await (window as any).api?.syncExportData?.({
+                since,
+                fullDump: needsFullDump,
+                categories: categorySelection,
+            });
             const changes: Array<{
                 entity_type: string; entity_id: string;
                 encrypted_data: string; iv: string; action: string;
@@ -141,6 +270,40 @@ export const useSync = (): UseSyncReturn => {
                     const { encrypted_data, iv } = await encryptEntity(h, 'history' as any, key);
                     changes.push({ entity_type: 'history', entity_id: `hist_${h.id}`, encrypted_data, iv, action: 'upsert' });
                     encryptedCount++;
+                }
+
+                /**
+                 * Additional categories. Each maps to a payload key from
+                 * sync:export-data and an entity_type the server already knows
+                 * (or ignores). Failures here are logged, never fatal, so one
+                 * rejected category cannot block the rest of the sync.
+                 */
+                const extraCategories: Array<{ key: string; rows: any[]; entityType: string; idOf: (r: any) => string }> = [
+                    { key: 'pdfHighlights', rows: data.pdfHighlights || [], entityType: 'pdf_highlight', idOf: (r) => `pdfh_${r.id}` },
+                    { key: 'pdfDrawings', rows: data.pdfDrawings || [], entityType: 'pdf_drawing', idOf: (r) => `pdfd_${r.id}` },
+                    { key: 'kgEntities', rows: data.kgEntities || [], entityType: 'kg_entity', idOf: (r) => `kge_${r.id}` },
+                    { key: 'kgRelations', rows: data.kgRelations || [], entityType: 'kg_relation', idOf: (r) => `kgr_${r.id}` },
+                    { key: 'kgTriples', rows: data.kgTriples || [], entityType: 'kg_triple', idOf: (r) => `kgt_${r.id}` },
+                    { key: 'fileIndex', rows: data.fileIndex || [], entityType: 'file_index', idOf: (r) => `fi_${r.id}` },
+                ];
+
+                for (const category of extraCategories) {
+                    if (category.rows.length === 0) continue;
+                    try {
+                        for (const row of category.rows) {
+                            const { encrypted_data, iv } = await encryptEntity(row, category.entityType as any, key);
+                            changes.push({
+                                entity_type: category.entityType,
+                                entity_id: category.idOf(row),
+                                encrypted_data,
+                                iv,
+                                action: 'upsert',
+                            });
+                            encryptedCount++;
+                        }
+                    } catch (err: any) {
+                        console.warn(`[SYNC] Skipped ${category.key} (${err?.message || err})`);
+                    }
                 }
                 setSyncProgress(25);
             }
@@ -202,9 +365,13 @@ export const useSync = (): UseSyncReturn => {
             // entity types it accepts, and this repo cannot see that contract, so
             // a rejection here must not abort the message/bookmark/history push
             // that already succeeded above.
+            //
+            // Gated on the user's `agent_registry` category: the account panel
+            // offers that toggle, so it must actually control what is sent.
             try {
-                const agentExport = await (window as any).api?.agentsExport?.();
-                const agentRecords = Array.isArray(agentExport?.agents) ? agentExport.agents : [];
+                const agentRecords = categorySelection?.agent_registry === false
+                    ? []
+                    : (Array.isArray(data?.agents) ? data.agents : []);
                 if (agentRecords.length > 0) {
                     const agentChanges = [];
                     for (const agent of agentRecords) {
@@ -257,6 +424,11 @@ export const useSync = (): UseSyncReturn => {
                 const bookmarks: any[] = [];
                 const history: any[] = [];
                 const agents: any[] = [];
+                const extra: Record<string, any[]> = {
+                    pdfHighlights: [], pdfDrawings: [],
+                    kgEntities: [], kgRelations: [], kgTriples: [],
+                    fileIndex: [],
+                };
 
                 for (const change of pullChanges) {
                     if (change.action === 'delete') continue;
@@ -267,6 +439,12 @@ export const useSync = (): UseSyncReturn => {
                             case 'bookmark': bookmarks.push(decrypted); break;
                             case 'history': history.push(decrypted); break;
                             case 'agent': agents.push(decrypted); break;
+                            case 'pdf_highlight': extra.pdfHighlights.push(decrypted); break;
+                            case 'pdf_drawing': extra.pdfDrawings.push(decrypted); break;
+                            case 'kg_entity': extra.kgEntities.push(decrypted); break;
+                            case 'kg_relation': extra.kgRelations.push(decrypted); break;
+                            case 'kg_triple': extra.kgTriples.push(decrypted); break;
+                            case 'file_index': extra.fileIndex.push(decrypted); break;
                         }
                     } catch (e) {
                         console.error(`[SYNC] Failed to decrypt ${change.entity_id}:`, e);
@@ -274,7 +452,7 @@ export const useSync = (): UseSyncReturn => {
                 }
 
                 setSyncProgress(90);
-                const imported = await (window as any).api?.syncImportData?.({ messages, bookmarks, history });
+                const imported = await (window as any).api?.syncImportData?.({ messages, bookmarks, history, ...extra });
                 console.log(`[SYNC] Imported:`, imported);
 
                 if (agents.length > 0) {
@@ -307,7 +485,7 @@ export const useSync = (): UseSyncReturn => {
         } finally {
             syncInProgressRef.current = false;
         }
-    }, [isOnline, isAuthenticated, isEncryptionReady, getToken]);
+    }, [isOnline, isAuthenticated, isEncryptionReady, getToken, categorySelection]);
 
     useEffect(() => {
         const intervalMs = SYNC_FREQUENCIES[syncFrequency];
@@ -352,7 +530,12 @@ export const useSync = (): UseSyncReturn => {
         syncProgress,
         triggerSync,
         forceFullResync,
-        setSyncFrequency
+        setSyncFrequency,
+        syncCategories,
+        categorySelection,
+        categoriesLoading,
+        toggleCategory,
+        refreshCategories,
     };
 };
 
