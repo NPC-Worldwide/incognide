@@ -10,11 +10,23 @@ const { detectTeamSources } = require('./teamSources');
 
 let INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
 
+/**
+ * Expand a leading `~` to the user's home directory.
+ *
+ * Uses path.join rather than string concatenation so the result has the
+ * platform separator. `text.replace(/^~/, os.homedir())` yields
+ * `C:\Users\me/npc_team` on Windows: the separator after home stays a forward
+ * slash, so the value never compares equal to a path built with path.join and
+ * downstream fs calls see a mixed-separator path.
+ *
+ * Accepts both `~/sub/path` and the Windows-style `~\sub\path`.
+ */
 const expandTilde = (filepath) => {
   if (typeof filepath !== 'string') return filepath;
-  if (filepath.startsWith('~/')) return path.join(os.homedir(), filepath.slice(2));
   if (filepath === '~') return os.homedir();
-  return filepath;
+  if (!filepath.startsWith('~')) return filepath;
+  const rest = filepath.slice(1).replace(/^[\\/]+/, '');
+  return rest ? path.join(os.homedir(), rest) : os.homedir();
 };
 
 const pythonEnvConfigPath = path.join(INCOGNIDE_HOME, 'python_envs.json');
@@ -3969,7 +3981,7 @@ function register(ctx) {
         ];
 
         const dirsToScan = directory
-            ? [directory.replace(/^~/, homeDir)]
+            ? [expandTilde(directory)]
             : defaultDirs;
 
         const models = [];
@@ -4947,7 +4959,7 @@ function register(ctx) {
       }
       for (const [key, teamPath] of Object.entries(teams)) {
         if (typeof teamPath === 'string') {
-          teams[key] = teamPath.replace(/^~(?=\/|$)/, os.homedir());
+          teams[key] = expandTilde(teamPath);
         }
       }
       return { teams };
@@ -4967,7 +4979,7 @@ function register(ctx) {
       // with "Team directory not found". Create it here.
       for (const teamPath of Object.values(teams || {})) {
         if (typeof teamPath !== 'string' || !teamPath.trim()) continue;
-        const abs = teamPath.replace(/^~(?=\/|$)/, os.homedir());
+        const abs = expandTilde(teamPath);
         try {
           await fsPromises.mkdir(abs, { recursive: true });
         } catch (mkErr) {
@@ -4993,7 +5005,7 @@ function register(ctx) {
         registered = parsed?.teams || {};
       } catch {}
 
-      const expand = (t) => String(t || '').replace(/^~(?=\/|$)/, os.homedir());
+      const expand = expandTilde;
       const registeredPaths = new Set(Object.values(registered).map(expand));
 
       const isAlreadyRegistered = (p) => {

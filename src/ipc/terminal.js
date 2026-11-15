@@ -30,7 +30,26 @@ const ptyKillTimers = new Map();
  * blank and the caller sees no error at all.
  */
 function resolveLoginShell() {
-  if (os.platform() === 'win32') return 'powershell.exe';
+  if (os.platform() === 'win32') {
+    // Windows has no -l/-lc login-shell convention, so "the login shell" is
+    // just the system shell. Return a REAL path where possible: node-pty will
+    // resolve a bare name through PATH, but returning a path that does not
+    // exist is the exact failure mode this function exists to prevent.
+    const candidates = [];
+    if (process.env.SystemRoot) {
+      candidates.push(path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'));
+    }
+    candidates.push('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+    if (process.env.ComSpec) candidates.push(process.env.ComSpec);
+
+    for (const candidate of candidates) {
+      try {
+        if (candidate && fs.existsSync(candidate)) return candidate;
+      } catch {}
+    }
+    // Last resort: a bare name, which spawn() resolves via PATH.
+    return 'powershell.exe';
+  }
 
   const candidates = [];
   if (process.env.SHELL) candidates.push(process.env.SHELL);
@@ -181,8 +200,10 @@ function register(ctx) {
       // refusal. Hiding uninstalled agents is the launcher's job (discovery
       // reports `installed`), not the spawner's.
       if (os.platform() === 'win32') {
-        shell = 'powershell.exe';
-        args = ['-NoLogo', '-Command', `${shellType}; exit`];
+        shell = resolveLoginShell();
+        // `&` is PowerShell's call operator: it runs the agent as a command
+        // rather than parsing the name as a bare string expression.
+        args = ['-NoLogo', '-Command', `& ${shellType}; exit`];
       } else {
         shell = resolveLoginShell();
         // -l sources the login profile; -c runs the command; exec replaces the

@@ -118,12 +118,22 @@ describe('agent launch execs the agent as the PTY process', () => {
 
       const { shell, args } = spawnCalls[0];
       expect(typeof shell).toBe('string');
-      expect(shell).toMatch(/^\//);          // a real path, never undefined
-      expect(fs.existsSync(shell)).toBe(true);
+      // Never undefined: that is the original bug (pty.spawn(undefined) opens an
+      // ordinary shell, so the app silently got bash instead of the agent).
+      expect(shell).toBeTruthy();
 
-      // -lc <cmd>, and the command must exec the agent itself.
-      expect(args[0]).toBe('-lc');
-      expect(args[1]).toBe(`exec ${agent}`);
+      if (process.platform === 'win32') {
+        // Windows has no login-shell convention. The agent runs as a PowerShell
+        // command, and the name must appear in the command text.
+        expect(shell.toLowerCase()).toMatch(/powershell|cmd\.exe/);
+        expect(args.join(' ')).toContain(agent);
+      } else {
+        expect(shell).toMatch(/^\//);        // a real path on POSIX
+        expect(fs.existsSync(shell)).toBe(true);
+        // -lc <cmd>, and the command must exec the agent itself.
+        expect(args[0]).toBe('-lc');
+        expect(args[1]).toBe(`exec ${agent}`);
+      }
 
       expect(res.success).toBe(true);
       expect(res.shell).toBe(agent);
@@ -179,7 +189,12 @@ describe('existing shell types are unchanged', () => {
     const res = await create('system');
     expect(res.shell).toBe('system');
     expect(spawnCalls[0].shell).toBeTruthy();
-    expect(spawnCalls[0].args).toEqual(['-l']);
+    if (process.platform === 'win32') {
+      // No -l on Windows; it gets the system shell with no arguments.
+      expect(spawnCalls[0].args).toEqual([]);
+    } else {
+      expect(spawnCalls[0].args).toEqual(['-l']);
+    }
   });
 });
 
@@ -204,10 +219,16 @@ describe('login shell resolution', () => {
     const resolved = resolveLoginShell();
     expect(typeof resolved).toBe('string');
     expect(resolved).not.toBe('/bin/zsh');
-    expect(fs.existsSync(resolved)).toBe(true);
+    if (process.platform === 'win32') {
+      // May be a bare name (resolved through PATH by spawn) but must not be a
+      // POSIX path that cannot exist on Windows.
+      expect(resolved).not.toContain('/bin/');
+    } else {
+      expect(fs.existsSync(resolved)).toBe(true);
+    }
   });
 
-  it('prefers the configured $SHELL when it exists', () => {
+  it.skipIf(process.platform === 'win32')('prefers the configured $SHELL when it exists', () => {
     const original = process.env.SHELL;
     try {
       process.env.SHELL = '/bin/bash';
@@ -218,7 +239,7 @@ describe('login shell resolution', () => {
     }
   });
 
-  it('ignores a $SHELL that does not exist', () => {
+  it.skipIf(process.platform === 'win32')('ignores a $SHELL that does not exist', () => {
     const original = process.env.SHELL;
     try {
       process.env.SHELL = '/nonexistent/zsh';
@@ -236,7 +257,11 @@ describe('login shell resolution', () => {
     try {
       delete process.env.SHELL;
       const resolved = resolveLoginShell();
-      expect(fs.existsSync(resolved)).toBe(true);
+      expect(typeof resolved).toBe('string');
+      expect(resolved).toBeTruthy();
+      if (process.platform !== 'win32') {
+        expect(fs.existsSync(resolved)).toBe(true);
+      }
     } finally {
       if (original !== undefined) process.env.SHELL = original;
     }

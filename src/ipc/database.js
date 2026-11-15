@@ -114,17 +114,17 @@ const executeOnDatabase = async (connConfig, query, params = []) => {
       const db = new sqlite3.Database(connConfig.path, mode, (err) => {
         if (err) return reject(err);
 
+        // Resolve only once the handle is released. sqlite3's close() is async:
+        // settling first leaves the file briefly locked, which surfaces as
+        // EBUSY on Windows when the caller immediately removes the database.
         if (isReadQuery) {
           db.all(query, params, (err, rows) => {
-            db.close();
-            if (err) return reject(err);
-            resolve(rows);
+            db.close(() => (err ? reject(err) : resolve(rows)));
           });
         } else {
           db.run(query, params, function(err) {
-            db.close();
-            if (err) return reject(err);
-            resolve({ lastID: this.lastID, changes: this.changes });
+            const result = { lastID: this.lastID, changes: this.changes };
+            db.close(() => (err ? reject(err) : resolve(result)));
           });
         }
       });
@@ -1144,17 +1144,23 @@ function register(ctx) {
         })());
       }
 
+      /**
+       * Close the connection and only then resolve.
+       *
+       * sqlite3's close() is asynchronous. Resolving first leaves the file handle
+       * open a moment longer, which on Windows means the caller can observe the
+       * database as still locked (EBUSY on unlink). Awaiting the close callback
+       * makes the operation complete before the promise settles.
+       */
+      const closeAndResolve = (err) => {
+        if (err) console.error('[SYNC EXPORT] failed:', err.message);
+        else console.log(`[SYNC EXPORT] categories=${[...enabled].join(',')} messages=${result.messages.length} bookmarks=${result.bookmarks.length} history=${result.history.length}`);
+        db.close(() => resolve(result));
+      };
+
       Promise.all(jobs)
-        .then(() => {
-          db.close();
-          console.log(`[SYNC EXPORT] categories=${[...enabled].join(',')} messages=${result.messages.length} bookmarks=${result.bookmarks.length} history=${result.history.length}`);
-          resolve(result);
-        })
-        .catch((err) => {
-          db.close();
-          console.error('[SYNC EXPORT] failed:', err.message);
-          resolve(result);
-        });
+        .then(() => closeAndResolve(null))
+        .catch(closeAndResolve);
     });
   });
 
