@@ -928,6 +928,57 @@ function register(ctx) {
     );
   `;
 
+  /** Write one sync_settings row (creates the table first). */
+  const setSyncSetting = async (key, value) =>
+    new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(dbPath);
+      db.all(SYNC_SETTINGS_TABLE, () => {
+        db.run(
+          `INSERT INTO sync_settings (key, value) VALUES (?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+          [key, value],
+          (err) => {
+            db.close();
+            if (err) return reject(err);
+            resolve(true);
+          }
+        );
+      });
+    });
+
+  /**
+   * Load the payload versions recorded by previous syncs, so a device that
+   * already pushed a category at the current field list does not re-export it
+   * in full on every sync.
+   *
+   * Reads once per process and caches the promise. The versions are process
+   * state held in syncCategories, so re-reading before every export bought
+   * nothing and opened an extra SQLite connection on a hot path that already
+   * opens several -- measurable contention when tests run in parallel.
+   */
+  let payloadVersionsHydration = null;
+  const hydratePayloadVersions = () => {
+    if (!payloadVersionsHydration) {
+      payloadVersionsHydration = new Promise((resolve) => {
+        const db = new sqlite3.Database(dbPath);
+        db.all(SYNC_SETTINGS_TABLE, () => {
+          db.get(`SELECT value FROM sync_settings WHERE key = 'payloadVersions'`, [], (err, row) => {
+            db.close();
+            if (!err && row && row.value) {
+              try {
+                syncCategories.loadPayloadVersions(JSON.parse(row.value));
+              } catch {
+                // Corrupt value: start from scratch rather than failing sync.
+              }
+            }
+            resolve();
+          });
+        });
+      });
+    }
+    return payloadVersionsHydration;
+  };
+
   const readSyncCategorySelection = async () =>
     new Promise((resolve) => {
       const db = new sqlite3.Database(dbPath);
@@ -992,6 +1043,20 @@ function register(ctx) {
     const selection = syncCategories.normalizeSelection(categories);
     const enabled = new Set(syncCategories.enabledCategories(selection));
 
+    /**
+     * Categories whose encrypted field list changed since this device last
+     * pushed them. They are exported from the epoch (not the cursor) so the
+     * corrected fields are actually sent for rows that already exist remotely.
+     * Without this, a fixed ENCRYPTED_FIELDS entry would only ever apply to
+     * rows created after the fix, and every previously-pushed blob would stay
+     * permanently missing those fields on other devices.
+     */
+    await hydratePayloadVersions();
+    const staleSet = new Set(syncCategories.staleCategories(selection));
+    const fullTs = '1970-01-01T00:00:00.000Z';
+    /** Cursor to use for a category: epoch when its payload shape changed. */
+    const sinceFor = (categoryId) => (staleSet.has(categoryId) ? fullTs : sinceTs);
+
     return new Promise((resolve) => {
       const db = new sqlite3.Database(dbPath);
       const result = {
@@ -1002,6 +1067,8 @@ function register(ctx) {
         kgRelations: [], kgTriples: [],
         fileIndex: [], agents: [],
         categories: selection,
+        // Categories exported in full because their payload shape changed.
+        staleCategories: [...staleSet],
       };
 
       // Run each category's query set; a missing table or error yields empty
@@ -1096,10 +1163,11 @@ function register(ctx) {
         jobs.push((async () => {
           // Filtered: these tables persist indefinitely, so an unfiltered SELECT
           // re-sends every highlight and drawing on every sync.
+          const pdfSince = sinceFor('pdf_annotations');
           result.pdfHighlights = await query(
-            `SELECT * FROM pdf_highlights WHERE datetime(timestamp) > datetime(?) ORDER BY timestamp ASC`, [sinceTs]);
+            `SELECT * FROM pdf_highlights WHERE datetime(timestamp) > datetime(?) ORDER BY timestamp ASC`, [pdfSince]);
           result.pdfDrawings = await query(
-            `SELECT * FROM pdf_drawings WHERE datetime(timestamp) > datetime(?) ORDER BY timestamp ASC`, [sinceTs]);
+            `SELECT * FROM pdf_drawings WHERE datetime(timestamp) > datetime(?) ORDER BY timestamp ASC`, [pdfSince]);
         })());
       }
 
@@ -1108,12 +1176,13 @@ function register(ctx) {
           // kg_entities carries updated_at; relations/triples carry only
           // created_at. Filter each on the timestamp it actually has rather
           // than shipping the whole graph every time.
+          const kgSince = sinceFor('knowledge_graph');
           result.kgEntities = await query(
-            `SELECT * FROM kg_entities WHERE datetime(updated_at) > datetime(?) ORDER BY updated_at ASC`, [sinceTs]);
+            `SELECT * FROM kg_entities WHERE datetime(updated_at) > datetime(?) ORDER BY updated_at ASC`, [kgSince]);
           result.kgRelations = await query(
-            `SELECT * FROM kg_relations WHERE datetime(created_at) > datetime(?) ORDER BY created_at ASC`, [sinceTs]);
+            `SELECT * FROM kg_relations WHERE datetime(created_at) > datetime(?) ORDER BY created_at ASC`, [kgSince]);
           result.kgTriples = await query(
-            `SELECT * FROM kg_triples WHERE datetime(created_at) > datetime(?) ORDER BY created_at ASC`, [sinceTs]);
+            `SELECT * FROM kg_triples WHERE datetime(created_at) > datetime(?) ORDER BY created_at ASC`, [kgSince]);
         })());
       }
 
@@ -1147,7 +1216,8 @@ function register(ctx) {
           // indexed_at is a datetime string, so it uses the same
           // format-agnostic datetime() comparison as the other categories.
           result.fileIndex = await query(
-            `SELECT * FROM file_index WHERE datetime(indexed_at) > datetime(?) ORDER BY indexed_at ASC`, [sinceTs]);
+            `SELECT * FROM file_index WHERE datetime(indexed_at) > datetime(?) ORDER BY indexed_at ASC`,
+            [sinceFor('file_index')]);
         })());
       }
 
@@ -1182,6 +1252,27 @@ function register(ctx) {
       return { categories, selection, error: null };
     } catch (err) {
       return { categories: [], selection: syncCategories.defaultSelection(), error: err.message };
+    }
+  });
+
+  /**
+   * Record that the given categories were pushed at their current payload
+   * version, so they stop being re-exported in full on every sync.
+   *
+   * Separate from the export call on purpose: the renderer invokes this only
+   * after the push batches were accepted. That way an interrupted upload
+   * leaves the category stale and the next sync retries it.
+   */
+  ipcMain.handle('sync:mark-categories-pushed', async (_, ids = []) => {
+    try {
+      const valid = (Array.isArray(ids) ? ids : []).filter(
+        (id) => typeof id === 'string' && syncCategories.byId(id)
+      );
+      const versions = syncCategories.markCategoriesPushed(valid);
+      await setSyncSetting('payloadVersions', JSON.stringify(versions));
+      return { success: true, marked: valid, error: null };
+    } catch (err) {
+      return { success: false, marked: [], error: err.message };
     }
   });
 
@@ -1225,7 +1316,24 @@ function register(ctx) {
           const usable = tableCols.filter((c) => rows.some((r) => r[c] !== undefined));
           if (usable.length === 0) return res(0);
 
-          const keys = (keyColumns || []).filter((k) => usable.includes(k));
+          /**
+           * Natural key to de-duplicate on.
+           *
+           * When a caller names no key columns, fall back to the WHOLE row
+           * rather than to nothing. An empty key list used to mean "skip
+           * de-duplication entirely", which made a repeat import append a
+           * duplicate of every row -- and these tables have a bare
+           * AUTOINCREMENT primary key, so INSERT OR IGNORE never stopped it.
+           *
+           * That was mostly harmless while imports were cursor-driven, but a
+           * category is now re-exported in full when its payload shape changes
+           * (see staleCategories), so a second full import is expected
+           * behaviour, not an edge case. Falling back to the full tuple keeps
+           * "re-import the same rows" a no-op while still allowing rows that
+           * genuinely differ.
+           */
+          const explicitKeys = (keyColumns || []).filter((k) => usable.includes(k));
+          const keys = explicitKeys.length > 0 ? explicitKeys : usable;
 
           /**
            * De-duplicate against what is ALREADY in the table, not just against
@@ -1351,11 +1459,17 @@ function register(ctx) {
         // --- Additional category payloads ---
         // Best-effort: a table missing on this install must not abort the
         // message/bookmark/history import that already succeeded above.
-        try { imported.pdfHighlights = await insertRows('pdf_highlights', pdfHighlights, ['file_path', 'highlighted_text']); } catch (err) { console.warn('[SYNC IMPORT] pdf_highlights:', err.message); }
-        try { imported.pdfDrawings = await insertRows('pdf_drawings', pdfDrawings, ['file_path']); } catch (err) { console.warn('[SYNC IMPORT] pdf_drawings:', err.message); }
+        // Key on the CONTENT, not just the file. Keying a drawing on
+        // `file_path` alone collapsed every stroke on the same PDF into one
+        // row, so a second ink annotation was silently dropped on import.
+        try { imported.pdfHighlights = await insertRows('pdf_highlights', pdfHighlights, ['file_path', 'highlighted_text', 'position_json']); } catch (err) { console.warn('[SYNC IMPORT] pdf_highlights:', err.message); }
+        try { imported.pdfDrawings = await insertRows('pdf_drawings', pdfDrawings, ['file_path', 'page_index', 'svg_path']); } catch (err) { console.warn('[SYNC IMPORT] pdf_drawings:', err.message); }
         try { imported.kgEntities = await insertRows('kg_entities', kgEntities, ['name']); } catch (err) { console.warn('[SYNC IMPORT] kg_entities:', err.message); }
-        try { imported.kgRelations = await insertRows('kg_relations', kgRelations, []); } catch (err) { console.warn('[SYNC IMPORT] kg_relations:', err.message); }
-        try { imported.kgTriples = await insertRows('kg_triples', kgTriples, []); } catch (err) { console.warn('[SYNC IMPORT] kg_triples:', err.message); }
+        // kg_relations is identified by `name` (UNIQUE upstream); kg_triples by
+        // its head/relation/tail edge. Both previously passed no key columns,
+        // which disabled de-duplication and duplicated every row on re-import.
+        try { imported.kgRelations = await insertRows('kg_relations', kgRelations, ['name', 'relation_type']); } catch (err) { console.warn('[SYNC IMPORT] kg_relations:', err.message); }
+        try { imported.kgTriples = await insertRows('kg_triples', kgTriples, ['head_entity_id', 'relation_id', 'tail_entity_id']); } catch (err) { console.warn('[SYNC IMPORT] kg_triples:', err.message); }
         try { imported.fileIndex = await insertRows('file_index', fileIndex, ['path']); } catch (err) { console.warn('[SYNC IMPORT] file_index:', err.message); }
 
         db.close((err) => {

@@ -76,6 +76,66 @@ const FILTER_WIRING = {
 
 const SHARED = require('../shared/syncCategories.json');
 
+/**
+ * Per-category payload versions.
+ *
+ * A category's `payloadVersion` (from the shared JSON) is bumped when the SET
+ * OF FIELDS encrypted for its rows changes. That is not a data change, so the
+ * row's own timestamp never moves and the `since` cursor will never select it
+ * again -- the device keeps a permanently field-starved blob on the server. Any
+ * peer then decrypts a kg_relation with no endpoints, or a pdf_drawing with no
+ * geometry, and nothing downstream can recover it.
+ *
+ * So the version pushed per category is tracked, and a category whose pushed
+ * version is behind the code's version is exported in FULL (since=epoch) once,
+ * rewriting its blobs with the corrected field list.
+ *
+ * Persistence is injected by the caller (database.js stores it in the
+ * `sync_settings` table alongside the category selection) so this module stays
+ * free of database concerns and remains trivially testable.
+ */
+const payloadVersions = {};
+
+/** Hydrate from a plain object, e.g. the parsed `sync_settings` row. */
+const loadPayloadVersions = (stored) => {
+    if (!stored || typeof stored !== 'object') return;
+    for (const id of Object.keys(stored)) {
+        const v = Number(stored[id]);
+        if (Number.isFinite(v)) payloadVersions[id] = v;
+    }
+};
+
+/** Current in-memory versions, for persisting by the caller. */
+const getPayloadVersions = () => ({ ...payloadVersions });
+
+/**
+ * Which categories must be re-exported in full because their encrypted field
+ * list changed since this device last pushed them.
+ */
+const staleCategories = (selection) => {
+    const normalized = normalizeSelection(selection);
+    const stale = [];
+    for (const category of SYNC_CATEGORIES) {
+        if (!normalized[category.id]) continue;
+        const codeVersion = Number(category.payloadVersion) || 1;
+        const pushedVersion = Number(payloadVersions[category.id]) || 1;
+        if (pushedVersion < codeVersion) stale.push(category.id);
+    }
+    return stale;
+};
+
+/**
+ * Record that `ids` were pushed at the code's current payload version.
+ * Returns the full version map so the caller can persist it.
+ */
+const markCategoriesPushed = (ids) => {
+    for (const id of ids) {
+        const category = SYNC_CATEGORIES.find((c) => c.id === id);
+        if (category) payloadVersions[id] = Number(category.payloadVersion) || 1;
+    }
+    return getPayloadVersions();
+};
+
 const SYNC_CATEGORIES = SHARED.map((c) => ({
     ...c,
     tables: TABLE_WIRING[c.id] || [],
@@ -216,6 +276,10 @@ module.exports = {
     CATEGORY_IDS,
     defaultSelection,
     normalizeSelection,
+    staleCategories,
+    markCategoriesPushed,
+    loadPayloadVersions,
+    getPayloadVersions,
     enabledCategories,
     byId,
     countCategories,

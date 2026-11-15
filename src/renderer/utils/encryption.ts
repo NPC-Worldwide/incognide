@@ -122,8 +122,31 @@ export type EncryptedEntityType =
     | 'file_index'
     | 'attachment';
 
+/**
+ * Fields encrypted per entity type.
+ *
+ * INVARIANT: every name here MUST exist as a column on the table the exporter
+ * reads for that type. `encryptEntity` builds its plaintext by copying only
+ * these keys and skipping the ones whose value is `undefined`, so a name that
+ * is not on the row is dropped SILENTLY -- the blob still encrypts, still
+ * uploads, still decrypts, and simply arrives missing that field on every
+ * other device. There is no error at any layer.
+ *
+ * That is exactly how the knowledge graph shipped unusable: kg_relation listed
+ * `source_id`/`target_id` and kg_triple listed `subject`/`predicate`/`object`,
+ * while the real columns are `name` and `head_entity_id`/`relation_id`/
+ * `tail_entity_id`. Relations decrypted with no endpoints and triples with
+ * nothing but an id, so no graph could be rebuilt anywhere.
+ *
+ * Every name must exist on its real table; a missing one is dropped silently.
+ */
 export const ENCRYPTED_FIELDS: Record<EncryptedEntityType, string[]> = {
-    conversation: ['conversation_id', 'title', 'directory_path', 'created_at', 'updated_at'],
+    // NOTE: nothing currently ENCRYPTS this type -- the renderer pushes
+    // per-message blobs and `sync:export-data` derives conversation summaries
+    // (conversation_id / directory_path / created_at / updated_at) from
+    // conversation_history without uploading them separately. Kept in sync with
+    // the real message columns so it stays correct if a producer is added.
+    conversation: ['conversation_id', 'directory_path', 'timestamp'],
     message: [
         'message_id', 'timestamp', 'role', 'content', 'conversation_id',
         'directory_path', 'model', 'provider', 'npc', 'team',
@@ -146,13 +169,35 @@ export const ENCRYPTED_FIELDS: Record<EncryptedEntityType, string[]> = {
 
     // PDF annotations: the highlighted text and any note are user content, and
     // the file path reveals project layout.
-    pdf_highlight: ['id', 'file_path', 'highlighted_text', 'annotation', 'color', 'position'],
-    pdf_drawing: ['id', 'file_path', 'drawing_data'],
+    // Columns per src/main.js `pdf_highlights`. The anchor is `position_json`,
+    // not `position`; without it a highlight cannot be placed back on a page.
+    pdf_highlight: [
+        'id', 'file_path', 'highlighted_text', 'annotation', 'color',
+        'position_json', 'timestamp'
+    ],
+    // Columns per src/main.js `pdf_drawings`. The ink itself is `svg_path`
+    // (there is no `drawing_data` column), so the full stroke geometry and its
+    // placement all have to travel or the drawing is unreproducible.
+    pdf_drawing: [
+        'id', 'file_path', 'page_index', 'drawing_type', 'svg_path',
+        'stroke_color', 'stroke_width',
+        'position_x', 'position_y', 'width', 'height', 'timestamp'
+    ],
 
     // Knowledge-graph rows are pure user content.
-    kg_entity: ['id', 'name', 'entity_type', 'description', 'properties'],
-    kg_relation: ['id', 'source_id', 'target_id', 'relation_type', 'properties'],
-    kg_triple: ['id', 'subject', 'predicate', 'object', 'confidence'],
+    // Columns per src/main.js `kg_entities`. `description`/`properties` do not
+    // exist -- the descriptive payload lives in `metadata`. `embedding` is a
+    // derived vector blob and is deliberately not synced.
+    kg_entity: ['id', 'name', 'entity_type', 'source', 'metadata', 'created_at', 'updated_at'],
+    // Columns per src/main.js `kg_relations`. A relation's identity is its
+    // `name`; the endpoints live on kg_triples, not here.
+    kg_relation: ['id', 'name', 'relation_type', 'created_at'],
+    // Columns per src/main.js `kg_triples`. This is where the graph edges are
+    // actually stored: head/relation/tail. Syncing only `id` reproduced nothing.
+    kg_triple: [
+        'id', 'head_entity_id', 'relation_id', 'tail_entity_id', 'weight',
+        'source', 'metadata', 'created_at'
+    ],
 
     // Command history can contain secrets typed at a prompt.
     command: ['id', 'command', 'output', 'location', 'timestamp', 'subcommands', 'device_id', 'device_name'],
@@ -162,7 +207,8 @@ export const ENCRYPTED_FIELDS: Record<EncryptedEntityType, string[]> = {
                      'conversation_id', 'error_message', 'device_id', 'device_name'],
 
     // File index paths and previews reveal filesystem layout and file contents.
-    file_index: ['id', 'path', 'folder_path', 'filename', 'content_preview', 'content_hash'],
+    file_index: ['id', 'path', 'folder_path', 'filename', 'extension', 'size', 'mtime',
+                 'content_hash', 'content_preview', 'indexed_at'],
 
     // Message attachments: the actual bytes are the sensitive part.
     attachment: ['id', 'message_id', 'attachment_name', 'attachment_type', 'attachment_data',

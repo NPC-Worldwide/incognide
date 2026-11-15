@@ -467,6 +467,26 @@ export const useSync = (): UseSyncReturn => {
                 console.log('[SYNC] Nothing to pull');
             }
 
+            /**
+             * Record that categories exported in full because their payload
+             * shape changed have now been pushed at the current version.
+             *
+             * Done only here, after every batch was accepted: if the push had
+             * failed partway, the category must stay "stale" so the next sync
+             * re-exports it from the epoch again. Marking it eagerly would let
+             * a partial upload be treated as complete and leave remote rows
+             * field-starved forever.
+             */
+            try {
+                const stale = Array.isArray(data?.staleCategories) ? data.staleCategories : [];
+                if (stale.length > 0) {
+                    await (window as any).api?.syncMarkCategoriesPushed?.(stale);
+                    console.log(`[SYNC] Re-exported ${stale.length} category(ies) at current payload version: ${stale.join(', ')}`);
+                }
+            } catch (err) {
+                console.warn('[SYNC] Could not record payload versions:', err);
+            }
+
             const now = new Date();
             setLastSyncTime(now);
             localStorage.setItem(LAST_SYNC_KEY, now.toISOString());
