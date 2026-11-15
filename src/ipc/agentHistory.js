@@ -112,7 +112,17 @@ const makeQuery = (writeDb, dbQuery) => {
 const all = (db, sql, params = []) =>
     new Promise((resolve, reject) => db.all(sql, params, (e, r) => (e ? reject(e) : resolve(r || []))));
 
-const closeDb = (db) => new Promise((resolve) => db.close(() => resolve()));
+// Release a handle. Resolves after close() settles so callers can safely treat
+// the file as free afterwards; sqlite3's close callback fires once the handle is
+// released, which is what makes the following unlink safe on Windows.
+const closeDb = (db) => new Promise((resolve) => {
+    if (!db) return resolve();
+    try {
+        db.close(() => resolve());
+    } catch {
+        resolve();
+    }
+});
 
 const safeJson = (text) => {
     try {
@@ -971,6 +981,9 @@ const ingestAgentHistory = async ({ dbQuery, dbPath, home, force = false } = {})
             stats.errors.push(`commit: ${err.message}`);
             try { await run(writeDb, 'ROLLBACK'); } catch {}
         }
+        // Always release the handle. A leaked write connection keeps the
+        // database locked, which on Windows makes the file undeletable (EBUSY)
+        // for whatever runs next.
         await closeDb(writeDb);
     }
 

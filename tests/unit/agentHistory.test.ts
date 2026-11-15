@@ -24,6 +24,29 @@ import * as path from 'path';
 import { createRequire } from 'module';
 import sqlite3 from 'sqlite3';
 
+/**
+ * Remove a temp tree, tolerating Windows' delayed file-handle release.
+ *
+ * sqlite3's `close()` callback can fire before the OS actually drops the lock on
+ * the database file, and the FTS triggers keep extra handles open. A
+ * synchronous rmSync then races that release and throws EBUSY. Retry with a
+ * short synchronous backoff; if the handle is still held after that we give up
+ * rather than failing the suite over a temp directory.
+ */
+const rmTempTree = (dir: string) => {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (err: any) {
+      if (err?.code !== 'EBUSY' && err?.code !== 'EPERM' && err?.code !== 'ENOTEMPTY') throw err;
+      const until = Date.now() + 50 * (attempt + 1);
+      while (Date.now() < until) { /* brief sync backoff */ }
+    }
+  }
+};
+
+
 const require = createRequire(import.meta.url);
 const H = require('../../src/ipc/agentHistory.js');
 
@@ -80,7 +103,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  rmTempTree(tmpRoot);
 });
 
 describe('codex rollouts', () => {

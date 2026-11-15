@@ -5,6 +5,28 @@ import fs from 'fs';
 import os from 'os';
 import sqlite3 from 'sqlite3';
 
+/**
+ * Remove a temp tree, tolerating Windows' delayed file-handle release.
+ *
+ * A SQLite handle can stay locked for a moment after close() resolves, and a
+ * spawned daemon process may still be shutting down. A synchronous rmSync then
+ * races that and throws EBUSY; retry briefly instead of failing the suite over
+ * a temp directory.
+ */
+const rmTempTree = (dir: string) => {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (err: any) {
+      if (err?.code !== 'EBUSY' && err?.code !== 'EPERM' && err?.code !== 'ENOTEMPTY') throw err;
+      const until = Date.now() + 50 * (attempt + 1);
+      while (Date.now() < until) { /* brief sync backoff */ }
+    }
+  }
+};
+
+
 const DAEMON_SCRIPT = path.join(__dirname, '../../src/daemon/incognide-daemon.js');
 
 // Restore original fetch for daemon tests (they need real HTTP fetch for the spawned daemon)
@@ -94,7 +116,7 @@ describe('incognide-daemon', () => {
       if (!proc.killed) proc.kill('SIGKILL');
     }
     await new Promise<void>((resolve) => db.close(() => resolve()));
-    fs.rmSync(TEST_HOME, { recursive: true, force: true });
+    rmTempTree(TEST_HOME);
     try { fs.unlinkSync(TEST_DB); } catch {}
   });
 
