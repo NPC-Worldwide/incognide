@@ -16,6 +16,15 @@ export function wrapBrowserEvalCode(code: string): { expression: string; fallbac
 }
 
 function getChromeUserAgent(): string {
+    // Prefer the value the preload computed from the real Electron/Chromium
+    // versions. `process` is unavailable in this isolated/sandboxed renderer,
+    // so the old local fallback always produced a hardcoded Mac Chrome/120 UA
+    // on every platform - which is exactly the kind of mismatch Google's
+    // "browser or app may not be secure" check dislikes.
+    const fromPreload = (window as any).api?.chromeUserAgent;
+    if (typeof fromPreload === 'string' && fromPreload.includes('Chrome/')) {
+        return fromPreload;
+    }
     try {
         const chromeVersion = (process as any).versions?.chrome || '120.0.0.0';
         if (window.navigator.userAgent.includes('Win')) {

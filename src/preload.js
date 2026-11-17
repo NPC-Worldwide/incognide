@@ -5,7 +5,21 @@ const DEFAULT_PORT = IS_DEV ? '5437' : '5337';
 const BACKEND_PORT = process.env.INCOGNIDE_PORT || DEFAULT_PORT;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
+// Renderers run with contextIsolation/sandbox, so `process.versions` is not
+// reachable from React code. WebBrowserViewer needs a Chrome UA to hand the
+// <webview> `useragent` prop - computing it here keeps the platform and
+// Chrome version correct instead of falling back to a hardcoded one.
+const CHROME_USER_AGENT = (() => {
+    const chromeVersion = (process.versions && process.versions.chrome) || '120.0.0.0';
+    let platform;
+    if (process.platform === 'win32') platform = 'Windows NT 10.0; Win64; x64';
+    else if (process.platform === 'darwin') platform = 'Macintosh; Intel Mac OS X 10_15_7';
+    else platform = 'X11; Linux x86_64';
+    return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+})();
+
 contextBridge.exposeInMainWorld('api', {
+chromeUserAgent: CHROME_USER_AGENT,
 proxyFetch: (url, options) => ipcRenderer.invoke('proxy-fetch', url, options),
 listSerialPorts: () => ipcRenderer.invoke('list-serial-ports'),
 textPredict: (data) => ipcRenderer.invoke('text-predict', data),
