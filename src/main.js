@@ -51,6 +51,32 @@ const FRONTEND_PORT = IS_DEV_MODE ? 7337 : 6337;
 const BACKEND_PORT = IS_DEV_MODE ? 5437 : 5337;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
+// Google (and a number of other identity providers / banks) reject any
+// User-Agent containing an `Electron/x.y.z` token with:
+//   "Couldn't sign you in - This browser or app may not be secure"
+// Electron appends that token to every UA it builds, and it leaks on the
+// paths OAuth actually uses: <webview> panes, BrowserViews AND the popup
+// windows they open for the consent screen. Per-webContents setUserAgent()
+// fixes the top-level document only - popups spawn with a fresh, unfixed UA.
+// app.userAgentFallback is applied at webContents creation, so panes, popups
+// and BrowserViews all inherit a clean Chrome UA.
+function buildChromeUserAgent() {
+  const chromeVersion = process.versions.chrome || '120.0.0.0';
+  let platform;
+  if (process.platform === 'win32') {
+    platform = 'Windows NT 10.0; Win64; x64';
+  } else if (process.platform === 'darwin') {
+    platform = 'Macintosh; Intel Mac OS X 10_15_7';
+  } else {
+    platform = 'X11; Linux x86_64';
+  }
+  return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+}
+
+const CLEAN_USER_AGENT = buildChromeUserAgent();
+// Must be set before app is ready for webviews/popups to pick it up.
+app.userAgentFallback = CLEAN_USER_AGENT;
+
 const INCOGNIDE_BASE = process.env.INCOGNIDE_BASE || path.join(os.homedir(), '.incognide');
 
 let splashWindow = null;
