@@ -139,6 +139,18 @@ models. Add the detected provider, then expand its card to load the models avail
 to your key; `deepseek-ai/DeepSeek-V4.1-Flash` is the default model. API usage is
 billed separately by Runcrate ([docs](https://runcrate.ai/docs/models/overview)).
 
+#### Synap
+
+Get your own key from [Synap](https://synap402.com) and save it as `SYNAP_API_KEY`
+in Global Settings or `~/.incogniderc`. Restart Incognide after changing
+environment variables. Model Manager detects Synap and uses
+`https://synap402.com/v1` for its OpenAI-compatible API; the default model
+`synap-v1` auto-routes each request to whichever model Synap serves can
+handle it, billed at that model's price. Synap is operated by Linkrra and is
+independent of Incognide; your prompts and key go directly to Synap under its
+own terms, the same as any other cloud provider listed here. API usage is
+billed separately by Synap.
+
 #### UberLLM
 
 Get your own key from [UberLLM](https://uberllm.dev/signup) and save it as

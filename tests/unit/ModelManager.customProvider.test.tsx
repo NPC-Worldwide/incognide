@@ -167,6 +167,28 @@ describe('ModelManager custom provider', () => {
     expect(await screen.findByText('deepseek-ai/DeepSeek-V4.1-Flash')).toBeInTheDocument();
   });
 
+  it('discovers models for a configured Synap provider', async () => {
+    const api = window.api as any;
+    api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{
+      name: 'synap',
+      api_url: 'https://synap402.com/v1',
+      api_key_var: 'SYNAP_API_KEY',
+    }] } });
+    api.getProviderModels = vi.fn().mockResolvedValue({ models: [
+      { id: 'synap-v1', name: 'synap-v1', provider: 'synap' },
+    ] });
+    const user = userEvent.setup();
+    render(<ModelManager />);
+    const label = await screen.findByText('Synap');
+    await user.click(label.closest('button')!);
+    await waitFor(() => expect(api.getProviderModels).toHaveBeenCalledWith({
+      provider: 'synap',
+      baseUrl: 'https://synap402.com/v1',
+      apiKeyVar: 'SYNAP_API_KEY',
+    }));
+    expect(await screen.findByText('synap-v1')).toBeInTheDocument();
+  });
+
   it('discovers models for a configured UberLLM provider', async () => {
     const api = window.api as any;
     api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{

@@ -2610,6 +2610,7 @@ function register(ctx) {
     { provider: 'runcrate', envVar: 'RUNCRATE_API_KEY', baseUrl: 'https://api.runcrate.ai/v1', displayName: 'Runcrate' },
     { provider: 'sambanova', envVar: 'SAMBANOVA_API_KEY', baseUrl: 'https://api.sambanova.ai/v1', displayName: 'SambaNova' },
     { provider: 'standardcompute', envVar: 'STANDARDCOMPUTE_API_KEY', baseUrl: 'https://api.stdcmpt.com/v1', displayName: 'Standard Compute' },
+    { provider: 'synap', envVar: 'SYNAP_API_KEY', baseUrl: 'https://synap402.com/v1', displayName: 'Synap' },
     { provider: 'together', envVar: 'TOGETHER_API_KEY', baseUrl: 'https://api.together.xyz/v1', displayName: 'Together AI' },
     { provider: 'uberllm', envVar: 'UBERLLM_API_KEY', baseUrl: 'https://api.uberllm.dev/v1', displayName: 'UberLLM' },
     { provider: 'vertex_ai', envVar: 'VERTEX_AI_API_KEY', baseUrl: 'https://{region}-aiplatform.googleapis.com', displayName: 'Google Vertex AI' },
