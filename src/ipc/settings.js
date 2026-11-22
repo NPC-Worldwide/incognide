@@ -2612,7 +2612,7 @@ function register(ctx) {
     { provider: 'standardcompute', envVar: 'STANDARDCOMPUTE_API_KEY', baseUrl: 'https://api.stdcmpt.com/v1', displayName: 'Standard Compute' },
     { provider: 'synap', envVar: 'SYNAP_API_KEY', baseUrl: 'https://synap402.com/v1', displayName: 'Synap' },
     { provider: 'together', envVar: 'TOGETHER_API_KEY', baseUrl: 'https://api.together.xyz/v1', displayName: 'Together AI' },
-    { provider: 'uberllm', envVar: 'UBERLLM_API_KEY', baseUrl: 'https://api.uberllm.dev/v1', displayName: 'UberLLM' },
+    { provider: 'uberllm', envVar: 'UBERLLM_API_KEY', baseUrl: 'https://api.martllm.com/v1', displayName: 'MartLLM' },
     { provider: 'vertex_ai', envVar: 'VERTEX_AI_API_KEY', baseUrl: 'https://{region}-aiplatform.googleapis.com', displayName: 'Google Vertex AI' },
     { provider: 'watsonx', envVar: 'WATSONX_API_KEY', baseUrl: 'https://{region}.ml.cloud.ibm.com', displayName: 'IBM Watsonx' },
     { provider: 'xai', envVar: 'XAI_API_KEY', baseUrl: 'https://api.x.ai/v1', displayName: 'xAI' },

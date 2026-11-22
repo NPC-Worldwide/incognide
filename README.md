@@ -151,16 +151,16 @@ independent of Incognide; your prompts and key go directly to Synap under its
 own terms, the same as any other cloud provider listed here. API usage is
 billed separately by Synap.
 
-#### UberLLM
+#### MartLLM
 
-Get your own key from [UberLLM](https://uberllm.dev/signup) and save it as
+Get your own key from [MartLLM](https://martllm.com/signup) and save it as
 `UBERLLM_API_KEY` in Global Settings or `~/.incogniderc`. Restart Incognide after
-changing environment variables. Model Manager detects UberLLM and uses
-`https://api.uberllm.dev/v1` for its OpenAI-compatible API to models from many
+changing environment variables. Model Manager detects MartLLM and uses
+`https://api.martllm.com/v1` for its OpenAI-compatible API to models from many
 vendors (DeepSeek, Anthropic, OpenAI, Qwen and others). Add the detected provider,
 then expand its card to load the models available to your key;
 `deepseek/deepseek-v4-flash` is the default model. API usage is billed separately
-by UberLLM ([models and prices](https://uberllm.dev/models)).
+by MartLLM ([models and prices](https://martllm.com/models)).
 
 ### 4. Local setup for fine-tuning
 
