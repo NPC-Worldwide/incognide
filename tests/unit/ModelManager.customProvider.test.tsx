@@ -189,11 +189,11 @@ describe('ModelManager custom provider', () => {
     expect(await screen.findByText('synap-v1')).toBeInTheDocument();
   });
 
-  it('discovers models for a configured UberLLM provider', async () => {
+  it('discovers models for a configured MartLLM provider', async () => {
     const api = window.api as any;
     api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{
       name: 'uberllm',
-      api_url: 'https://api.uberllm.dev/v1',
+      api_url: 'https://api.martllm.com/v1',
       api_key_var: 'UBERLLM_API_KEY',
     }] } });
     api.getProviderModels = vi.fn().mockResolvedValue({ models: [
@@ -201,11 +201,11 @@ describe('ModelManager custom provider', () => {
     ] });
     const user = userEvent.setup();
     render(<ModelManager />);
-    const label = await screen.findByText('UberLLM');
+    const label = await screen.findByText('MartLLM');
     await user.click(label.closest('button')!);
     await waitFor(() => expect(api.getProviderModels).toHaveBeenCalledWith({
       provider: 'uberllm',
-      baseUrl: 'https://api.uberllm.dev/v1',
+      baseUrl: 'https://api.martllm.com/v1',
       apiKeyVar: 'UBERLLM_API_KEY',
     }));
     expect(await screen.findByText('deepseek/deepseek-v4-flash')).toBeInTheDocument();
