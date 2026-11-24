@@ -162,34 +162,15 @@ then expand its card to load the models available to your key;
 `deepseek/deepseek-v4-flash` is the default model. API usage is billed separately
 by MartLLM ([models and prices](https://martllm.com/models)).
 
-### 4. Local setup for fine-tuning
 
-Inference with LLMs is routed through the bundled backend (including calls to locally running models with llama.cpp, omlx, etc), but users can also fine-tune models within incognide. To accomplish this, you need to specify a Python virtual environment with the heavy packages (`torch`+ `transformers` etc.). For such calls, Incognide shells out to the specified venv instead of including these dependencies in the bundled backend to keep the packaged executable small.
-
-1. Open **Team Management** (Users icon in the right sidebar or the settings screen).
-2. Go to the **Python Env** tab.
-3. Choose an environment for the current workspace:
-   - **Detected**: list of venvs/pyenv/conda/uv environments found under the workspace, homedir, and common paths.
-   - **Create new venv**: creates `<workspace>/.venv` (or the name you pick) with the system Python.
-   - **Custom path**: point at any existing Python interpreter.
-4. With an environment selected, click **Install packages** and pick one of the bundles:
-   - `PyTorch (CPU)` — `torch torchvision torchaudio`
-   - `PyTorch (CUDA)` — same plus the CUDA index URL for GPU builds
-   - `Diffusers (Image Gen)` — `diffusers transformers accelerate safetensors`
-   - `Transformers (LLM)` — `transformers accelerate safetensors sentencepiece`
-   - `Whisper (Speech)` — `openai-whisper`
-
-   Or install any specific package by name.
-
-
-### 5. Data directory
+### 4. Data directory
 
 Incognide stores teams, NPCs, jinxes, memories, knowledge graphs, and model configs under the data directory you picked in step 2 (default `~/.incognide`). Changing it in **Settings → Global Settings → Default Directory** updates `~/.incogniderc`'s `INCOGNIDE_DATA_DIRECTORY`.
 
-### 6. Troubleshooting
+### 5. Troubleshooting
 
-- **Backend unhealthy indicator in the status bar** — right-click the `npcpy` icon in the status bar for Restart / View Logs. Logs live in `~/Library/Logs/Incognide/` (macOS), `~/.config/Incognide/logs/` (Linux), or `%APPDATA%\Incognide\logs\` (Windows).
-- **Tutorial didn't highlight anything** — the tutorial opens the Help pane before it starts so the workspace highlight has a target. If it runs before any pane is open you'll see an un-highlighted step; re-run it from **Settings → Replay Tutorial**.
+- Click on the window manager icon in the bottom left (in between the dark/light mode theme toggle and the incognide icon that launches a new window) and you will be able to see the window manager. From there, you can access the frontend and backend logs . Reviewing these may help you diagnose your issue, and when submitting issues to this repo, including directly from these logs will be most helpful to isolate and provide fixes.
+
 
 ---
 
