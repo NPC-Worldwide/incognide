@@ -1437,6 +1437,40 @@ function register(ctx) {
     }
   });
 
+  // Google BotGuard writes marker cookies (__Host-GAPS, OTZ, NID, __Secure-*)
+  // when it rejects a consumer sign-in attempt. Once those cookies exist, every
+  // subsequent attempt is rejected before the login is even attempted. Clear
+  // them so the user gets a fresh chance at the lighter sign-in flow.
+  ipcMain.handle('browser:clearGoogleCookies', async (event, { partition }) => {
+    try {
+      const sess = session.fromPartition(`persist:${partition}`);
+      const cookies = await sess.cookies.get({});
+      const removed = [];
+      for (const cookie of cookies) {
+        const domain = cookie.domain || '';
+        if (!domain.includes('google.com')) continue;
+        const isMarker = cookie.name.startsWith('__Host-') ||
+                           cookie.name.startsWith('__Secure-') ||
+                           ['OTZ', 'NID'].includes(cookie.name);
+        if (!isMarker) continue;
+        try {
+          const cookieDomain = domain.startsWith('.') ? domain.slice(1) : domain;
+          const protocol = cookie.secure ? 'https' : 'http';
+          const url = `${protocol}://${cookieDomain}${cookie.path || '/'}`;
+          await sess.cookies.remove(url, cookie.name);
+          removed.push(`${cookie.name}@${domain}`);
+        } catch (err) {
+          console.log(`[Cookies] Failed to remove ${cookie.name}@${domain}:`, err.message);
+        }
+      }
+      console.log(`[Cookies] Cleared ${removed.length} Google marker cookies from partition ${partition}`);
+      return { success: true, removed };
+    } catch (error) {
+      console.error('[Cookies] Error clearing Google cookies:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('password-save', async (event, { site, username, password, notes }) => {
     try {
       const data = await readCredentials();
