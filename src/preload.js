@@ -306,6 +306,7 @@ readPdfText: (filePath) =>
     browserSetCookieInheritance: (args) => ipcRenderer.invoke('browser:setCookieInheritance', args),
     browserGetCookieInheritance: (args) => ipcRenderer.invoke('browser:getCookieInheritance', args),
     browserGetCookieDomains: (args) => ipcRenderer.invoke('browser:getCookieDomains', args),
+    browserClearGoogleCookies: (args) => ipcRenderer.invoke('browser:clearGoogleCookies', args),
 
     onCliOpenWorkspace: (callback) => {
         const handler = (_, data) => callback(data);

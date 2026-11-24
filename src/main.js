@@ -51,32 +51,6 @@ const FRONTEND_PORT = IS_DEV_MODE ? 7337 : 6337;
 const BACKEND_PORT = IS_DEV_MODE ? 5437 : 5337;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
-// Google (and a number of other identity providers / banks) reject any
-// User-Agent containing an `Electron/x.y.z` token with:
-//   "Couldn't sign you in - This browser or app may not be secure"
-// Electron appends that token to every UA it builds, and it leaks on the
-// paths OAuth actually uses: <webview> panes, BrowserViews AND the popup
-// windows they open for the consent screen. Per-webContents setUserAgent()
-// fixes the top-level document only - popups spawn with a fresh, unfixed UA.
-// app.userAgentFallback is applied at webContents creation, so panes, popups
-// and BrowserViews all inherit a clean Chrome UA.
-function buildChromeUserAgent() {
-  const chromeVersion = process.versions.chrome || '120.0.0.0';
-  let platform;
-  if (process.platform === 'win32') {
-    platform = 'Windows NT 10.0; Win64; x64';
-  } else if (process.platform === 'darwin') {
-    platform = 'Macintosh; Intel Mac OS X 10_15_7';
-  } else {
-    platform = 'X11; Linux x86_64';
-  }
-  return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
-}
-
-const CLEAN_USER_AGENT = buildChromeUserAgent();
-// Must be set before app is ready for webviews/popups to pick it up.
-app.userAgentFallback = CLEAN_USER_AGENT;
-
 const INCOGNIDE_BASE = process.env.INCOGNIDE_BASE || path.join(os.homedir(), '.incognide');
 
 let splashWindow = null;
@@ -435,6 +409,41 @@ const electronLogStream = fs.createWriteStream(electronLogPath, { flags: 'a' });
 const backendLogStream = fs.createWriteStream(backendLogPath, { flags: 'a' });
 
 let mainWindow = null;
+
+
+// Google rejects consumer sign-in when it sees an embedded browser that also
+// advertises a custom app name. For accounts.google.com only, strip the
+// app name token (e.g. "incognide/0.2.36") while keeping the rest of
+// Electron's real UA, including "Electron/..." and the real Chromium version.
+// This matches the fix used by Mise Browser and keeps Google in its lighter
+// sign-in flow instead of routing into BotGuard's strict GlifWebSignIn checks.
+const appNameToken = app.getName().replace(/[^a-zA-Z0-9]/g, '.');
+const appNameUaRegex = new RegExp(`\\s*${appNameToken}/[\d.]+`, 'gi');
+function stripAppNameFromGoogleUA(sess) {
+  if (!sess || typeof sess.webRequest?.onBeforeSendHeaders !== 'function') return;
+  sess.webRequest.onBeforeSendHeaders({ urls: ['https://accounts.google.com/*'] }, (details, callback) => {
+    const headers = { ...details.requestHeaders };
+    if (headers['User-Agent']) {
+      const original = headers['User-Agent'];
+      headers['User-Agent'] = original.replace(appNameUaRegex, '').trim();
+      if (headers['User-Agent'] !== original) {
+        console.log('[UA] Stripped app name from Google auth UA:', headers['User-Agent']);
+      }
+    }
+    callback({ requestHeaders: headers });
+  });
+}
+app.on('session-created', (sess) => stripAppNameFromGoogleUA(sess));
+// Apply to sessions that may already exist (defaultSession, browser-global).
+setImmediate(() => {
+  try {
+    const { session } = require('electron');
+    stripAppNameFromGoogleUA(session.defaultSession);
+    stripAppNameFromGoogleUA(session.fromPartition('persist:browser-global'));
+  } catch (err) {
+    console.error('[UA] Failed to hook existing sessions:', err);
+  }
+});
 
 function getTargetWindow(event) {
     const senderWindow = event.sender ? BrowserWindow.fromWebContents(event.sender) : null;

@@ -841,6 +841,25 @@ const WebBrowserViewer = memo(({
             setIsSecure(url.startsWith('https://'));
             refreshBookmarkState();
 
+            // Google writes marker cookies (__Host-GAPS, OTZ) on rrk=46 rejection.
+            // Once present, they force every subsequent attempt straight to the
+            // rejection page. Clear them when we land there, then retry once.
+            try {
+                const u = new URL(url);
+                if (u.hostname.includes('accounts.google.com') && u.pathname.includes('/signin/rejected')) {
+                    (window as any).api?.browserClearGoogleCookies?.({ partition: viewId }).then((result: any) => {
+                        console.log('[Browser] Google cookie clear result:', result);
+                        const continueUrl = u.searchParams.get('continue') || 'https://mail.google.com/mail';
+                        const webview = webviewRef.current;
+                        if (webview) {
+                            webview.src = continueUrl;
+                        }
+                    }).catch((err: any) => {
+                        console.error('[Browser] Failed to clear Google cookies:', err);
+                    });
+                }
+            } catch {}
+
             try {
                 window.dispatchEvent(new CustomEvent('incognide:webview-predict', { detail: { type: 'blur', paneId: nodeId, webviewElement: webviewRef.current } }));
             } catch {}
@@ -2875,7 +2894,6 @@ const WebBrowserViewer = memo(({
                     ref={webviewRef}
                     className="absolute inset-0 w-full h-full"
                     partition={`persist:${viewId}`}
-                    useragent={getChromeUserAgent()}
                     allowpopups="true"
                     allowusermedia="true"
                     webpreferences="contextIsolation=no, javascript=yes, webSecurity=yes, allowRunningInsecureContent=no, spellcheck=yes, enableRemoteModule=no"
