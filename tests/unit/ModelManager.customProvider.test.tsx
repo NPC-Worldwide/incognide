@@ -211,6 +211,28 @@ describe('ModelManager custom provider', () => {
     expect(await screen.findByText('deepseek/deepseek-v4-flash')).toBeInTheDocument();
   });
 
+  it('discovers models for a configured onomeo provider', async () => {
+    const api = window.api as any;
+    api.userModelsLoad = vi.fn().mockResolvedValue({ config: { providers: [{
+      name: 'onomeo',
+      api_url: 'https://onomeo.com/v1',
+      api_key_var: 'ONOMEO_API_KEY',
+    }] } });
+    api.getProviderModels = vi.fn().mockResolvedValue({ models: [
+      { id: 'deepseek-v4.1-flash', name: 'deepseek-v4.1-flash', provider: 'onomeo' },
+    ] });
+    const user = userEvent.setup();
+    render(<ModelManager />);
+    const label = await screen.findByText('onomeo');
+    await user.click(label.closest('button')!);
+    await waitFor(() => expect(api.getProviderModels).toHaveBeenCalledWith({
+      provider: 'onomeo',
+      baseUrl: 'https://onomeo.com/v1',
+      apiKeyVar: 'ONOMEO_API_KEY',
+    }));
+    expect(await screen.findByText('deepseek-v4.1-flash')).toBeInTheDocument();
+  });
+
   it('shows a custom provider added without an API key', async () => {
     const user = userEvent.setup();
     render(<ModelManager />);

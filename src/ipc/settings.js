@@ -2594,6 +2594,7 @@ function register(ctx) {
     { provider: 'nebius', envVar: 'NEBIUS_API_KEY', baseUrl: 'https://api.studio.nebius.ai/v1', displayName: 'Nebius AI' },
     { provider: 'novita', envVar: 'NOVITA_API_KEY', baseUrl: 'https://api.novita.ai/v3/openai', displayName: 'Novita AI' },
     { provider: 'nvidia_nim', envVar: 'NVIDIA_NIM_API_KEY', baseUrl: 'https://integrate.api.nvidia.com/v1', displayName: 'NVIDIA NIM' },
+    { provider: 'onomeo', envVar: 'ONOMEO_API_KEY', baseUrl: 'https://onomeo.com/v1', displayName: 'onomeo' },
     { provider: 'openai', envVar: 'OPENAI_API_KEY', baseUrl: 'https://api.openai.com/v1', displayName: 'OpenAI' },
     { provider: 'openrouter', envVar: 'OPENROUTER_API_KEY', baseUrl: 'https://openrouter.ai/api/v1', displayName: 'OpenRouter' },
     {
