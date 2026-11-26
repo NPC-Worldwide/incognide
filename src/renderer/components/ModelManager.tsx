@@ -25,6 +25,7 @@ export const API_PROVIDER_META: Record<string, { name: string; color: string; bg
     groq: { name: 'Groq', color: 'text-orange-400', bgColor: 'bg-orange-600', docsUrl: 'https://console.groq.com/docs/models', defaultModel: 'llama-3.3-70b-versatile' },
     mistral: { name: 'Mistral', color: 'text-indigo-400', bgColor: 'bg-indigo-600', docsUrl: 'https://docs.mistral.ai/getting-started/models/models_overview/', defaultModel: 'mistral-large-latest' },
     moonshot: { name: 'Moonshot', color: 'text-pink-400', bgColor: 'bg-pink-600', docsUrl: 'https://platform.moonshot.cn/docs/intro', defaultModel: 'moonshot-v1-8k' },
+    onomeo: { name: 'onomeo', color: 'text-yellow-300', bgColor: 'bg-yellow-600', docsUrl: 'https://onomeo.com/integrations', defaultModel: 'deepseek-v4.1-flash' },
     openai: { name: 'OpenAI', color: 'text-green-400', bgColor: 'bg-green-600', docsUrl: 'https://platform.openai.com/docs/models', defaultModel: 'gpt-4o' },
     openrouter: { name: 'OpenRouter', color: 'text-violet-400', bgColor: 'bg-violet-600', docsUrl: 'https://openrouter.ai/models', defaultModel: 'openai/gpt-4o' },
     orcarouter: { name: 'OrcaRouter', color: 'text-cyan-300', bgColor: 'bg-cyan-600', docsUrl: 'https://www.orcarouter.ai', defaultModel: 'orcarouter/auto' },

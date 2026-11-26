@@ -164,6 +164,17 @@ then expand its card to load the models available to your key;
 `deepseek/deepseek-v4-flash` is the default model. API usage is billed separately
 by MartLLM ([models and prices](https://martllm.com/models)).
 
+#### onomeo
+
+Get your own key from [onomeo](https://onomeo.com/dashboard) and save it as
+`ONOMEO_API_KEY` in Global Settings or `~/.incogniderc`. Restart Incognide after
+changing environment variables. Model Manager detects onomeo and uses
+`https://onomeo.com/v1` for its OpenAI-compatible API to models from several
+vendors (DeepSeek, Anthropic, OpenAI and others). Add the detected provider, then
+expand its card to load the models available to your key; `deepseek-v4.1-flash`
+is the default model. API usage is billed separately by onomeo
+([pricing](https://onomeo.com/pricing)).
+
 
 ### 4. Data directory
 
